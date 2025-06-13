@@ -145,11 +145,9 @@ class StudentController extends Controller
      */
     public function import(Request $request)
     {
-
-            // Increase execution limits for large imports
-    set_time_limit(300); // 5 minutes
-    ini_set('memory_limit', '512M'); // 512MB memory
-
+        // Increase execution limits for large imports
+        set_time_limit(300); // 5 minutes
+        ini_set('memory_limit', '512M'); // 512MB memory
 
         // Validate the uploaded file
         $request->validate([
@@ -157,7 +155,7 @@ class StudentController extends Controller
                 'required',
                 'file',
                 'mimes:json',
-                'max:51200', // 10MB max
+                'max:51200', // 50MB max
             ],
         ]);
 
@@ -170,36 +168,13 @@ class StudentController extends Controller
                 return back()->with('error', 'Le fichier JSON est invalide.');
             }
 
-            // Handle the Oracle database export structure
+            // Handle the JSON structure - expecting array of student objects
             $studentsData = [];
 
-            if (isset($jsonData['results']) && is_array($jsonData['results'])) {
-                foreach ($jsonData['results'] as $result) {
-                    if (isset($result['items']) && is_array($result['items'])) {
-                        $columns = $result['columns'] ?? [];
-                        $columnNames = array_column($columns, 'name');
-
-                        foreach ($result['items'] as $item) {
-                            if (is_array($item)) {
-                                // Convert array of values to associative array using column names
-                                $studentRow = [];
-                                foreach ($item as $index => $value) {
-                                    if (isset($columnNames[$index])) {
-                                        $studentRow[$columnNames[$index]] = $value;
-                                    }
-                                }
-                                $studentsData[] = $studentRow;
-                            }
-                        }
-                    }
-                }
+            if (is_array($jsonData)) {
+                $studentsData = $jsonData;
             } else {
-                // Fallback: check if it's a simple array of student objects
-                if (is_array($jsonData)) {
-                    $studentsData = $jsonData;
-                } else {
-                    return back()->with('error', 'Structure JSON non reconnue. Le fichier doit contenir des données d\'étudiants.');
-                }
+                return back()->with('error', 'Le fichier JSON doit contenir un tableau d\'étudiants.');
             }
 
             if (empty($studentsData)) {
@@ -207,7 +182,7 @@ class StudentController extends Controller
             }
 
             if (count($studentsData) > 20000) {
-                return back()->with('error', 'Le fichier ne peut pas contenir plus de 1000 étudiants à la fois.');
+                return back()->with('error', 'Le fichier ne peut pas contenir plus de 20000 étudiants à la fois.');
             }
 
             $imported = 0;
@@ -218,8 +193,8 @@ class StudentController extends Controller
 
             foreach ($studentsData as $index => $studentData) {
                 try {
-                    // Map Oracle columns to our database columns
-                    $mappedData = $this->mapOracleToLocal($studentData);
+                    // Map the JSON fields to our database columns
+                    $mappedData = $this->mapJsonToDatabase($studentData);
 
                     // Validate required fields
                     if (!isset($mappedData['apoL_a01_code']) ||
@@ -264,7 +239,7 @@ class StudentController extends Controller
                         'line' => $index + 1,
                         'code' => $mappedData['apoL_a01_code'] ?? 'N/A',
                         'message' => $e->getMessage(),
-                        'type' => 'validation'
+                        'type' => 'database'
                     ];
                 }
             }
@@ -304,51 +279,80 @@ class StudentController extends Controller
         }
     }
 
-       private function mapOracleToLocal($oracleData)
+    /**
+     * Map JSON fields to database columns
+     */
+    private function mapJsonToDatabase($studentData)
     {
-        // Mapping Oracle columns to our database columns
-        $mapping = [
-            // Required fields
-            'COD_ETU' => 'apoL_a01_code',          // Code étudiant
-            'COD_ETU_1' => 'apoL_a01_code',        // Alternative code étudiant
-            'LIB_NOM_PAT_IND' => 'apoL_a02_nom',   // Nom de famille
-            'LIB_NOM_PAT_IND_1' => 'apoL_a02_nom', // Alternative nom de famille
-            'LIB_PR1_IND' => 'apoL_a03_prenom',    // Prénom
-            'LIB_PR1_IND_1' => 'apoL_a03_prenom',  // Alternative prénom
+        // This function maps the actual JSON field names to our database columns
+        $mapped = [];
 
-            // Optional fields
-            'DATE_NAI_IND' => 'apoL_a04_naissance', // Date de naissance
-            'COD_SEX_ETU' => 'cod_sex_etu',         // Sexe
-            'LIB_VIL_NAI_ETU' => 'lib_vil_nai_etu', // Ville de naissance
-            'CIN_IND' => 'cin_ind',                 // CIN
-            'COD_ETP' => 'cod_etp',                 // Code ETP
-            'COD_ANU' => 'cod_anu',                 // Code année
-            'COD_DIP' => 'cod_dip',                 // Code diplôme
-            'LIB_ETP' => 'lib_etp',                 // Libellé ETP
-            'LIC_ETP' => 'lic_etp',                 // Licence ETP
+        // Map student code - try different possible field names
+        if (isset($studentData['cod_etu'])) {
+            $mapped['apoL_a01_code'] = (string) $studentData['cod_etu'];
+        } elseif (isset($studentData['cod_etu_1'])) {
+            $mapped['apoL_a01_code'] = (string) $studentData['cod_etu_1'];
+        } elseif (isset($studentData['COD_ETU'])) {
+            $mapped['apoL_a01_code'] = (string) $studentData['COD_ETU'];
+        } elseif (isset($studentData['COD_ETU_1'])) {
+            $mapped['apoL_a01_code'] = (string) $studentData['COD_ETU_1'];
+        }
+
+        // Map last name
+        if (isset($studentData['lib_nom_pat_ind'])) {
+            $mapped['apoL_a02_nom'] = $studentData['lib_nom_pat_ind'];
+        } elseif (isset($studentData['lib_nom_pat_ind_1'])) {
+            $mapped['apoL_a02_nom'] = $studentData['lib_nom_pat_ind_1'];
+        } elseif (isset($studentData['LIB_NOM_PAT_IND'])) {
+            $mapped['apoL_a02_nom'] = $studentData['LIB_NOM_PAT_IND'];
+        } elseif (isset($studentData['LIB_NOM_PAT_IND_1'])) {
+            $mapped['apoL_a02_nom'] = $studentData['LIB_NOM_PAT_IND_1'];
+        }
+
+        // Map first name
+        if (isset($studentData['lib_pr1_ind'])) {
+            $mapped['apoL_a03_prenom'] = $studentData['lib_pr1_ind'];
+        } elseif (isset($studentData['lib_pr1_ind_1'])) {
+            $mapped['apoL_a03_prenom'] = $studentData['lib_pr1_ind_1'];
+        } elseif (isset($studentData['LIB_PR1_IND'])) {
+            $mapped['apoL_a03_prenom'] = $studentData['LIB_PR1_IND'];
+        } elseif (isset($studentData['LIB_PR1_IND_1'])) {
+            $mapped['apoL_a03_prenom'] = $studentData['LIB_PR1_IND_1'];
+        }
+
+        // Map birth date
+        if (isset($studentData['date_nai_ind'])) {
+            $mapped['apoL_a04_naissance'] = $this->formatDate($studentData['date_nai_ind']);
+        } elseif (isset($studentData['DATE_NAI_IND'])) {
+            $mapped['apoL_a04_naissance'] = $this->formatDate($studentData['DATE_NAI_IND']);
+        }
+
+        // Map other fields directly
+        $directMappings = [
+            // JSON field => Database field
+            'cod_etu' => 'cod_etu',
+            'cod_sex_etu' => 'cod_sex_etu',
+            'lib_vil_nai_etu' => 'lib_vil_nai_etu',
+            'cin_ind' => 'cin_ind',
+            'cod_etp' => 'cod_etp',
+            'cod_anu' => 'cod_anu',
+            'cod_dip' => 'cod_dip',
+            'lib_etp' => 'lib_etp',
+            'lic_etp' => 'lic_etp',
         ];
 
-        $mappedData = [];
-
-        foreach ($mapping as $oracleColumn => $localColumn) {
-            if (isset($oracleData[$oracleColumn])) {
-                $value = $oracleData[$oracleColumn];
-
-                // Handle date formatting if needed
-                if ($localColumn === 'apoL_a04_naissance' && !empty($value)) {
-                    $mappedData[$localColumn] = $this->formatDate($value);
-                } else {
-                    $mappedData[$localColumn] = $value;
-                }
+        foreach ($directMappings as $jsonField => $dbField) {
+            if (isset($studentData[$jsonField])) {
+                $mapped[$dbField] = $studentData[$jsonField];
+            }
+            // Also try uppercase version
+            $upperJsonField = strtoupper($jsonField);
+            if (isset($studentData[$upperJsonField])) {
+                $mapped[$dbField] = $studentData[$upperJsonField];
             }
         }
 
-        // Also include cod_etu as a copy of apoL_a01_code if not already set
-        if (isset($mappedData['apoL_a01_code']) && !isset($mappedData['cod_etu'])) {
-            $mappedData['cod_etu'] = $mappedData['apoL_a01_code'];
-        }
-
-        return $mappedData;
+        return $mapped;
     }
 
     /**
@@ -362,9 +366,12 @@ class StudentController extends Controller
 
         try {
             // Try to parse various date formats
-            $date = \DateTime::createFromFormat('Y-m-d', $dateString);
+            $date = \DateTime::createFromFormat('d/m/Y', $dateString);
             if (!$date) {
-                $date = \DateTime::createFromFormat('d/m/Y', $dateString);
+                $date = \DateTime::createFromFormat('Y-m-d', $dateString);
+            }
+            if (!$date) {
+                $date = \DateTime::createFromFormat('d/m/y', $dateString);
             }
             if (!$date) {
                 $date = \DateTime::createFromFormat('Y-m-d H:i:s', $dateString);
