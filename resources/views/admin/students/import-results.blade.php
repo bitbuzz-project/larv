@@ -121,40 +121,6 @@
         </div>
         @endif
 
-        @if(session('import_warnings') && count(session('import_warnings')) > 0)
-        <!-- Warnings -->
-        <div class="card border-0 shadow-sm mb-4">
-            <div class="card-header bg-warning text-white">
-                <h5 class="mb-0"><i>⚠️</i> Avertissements</h5>
-            </div>
-            <div class="card-body">
-                <ul class="list-group list-group-flush">
-                    @foreach(session('import_warnings') as $warning)
-                    <li class="list-group-item">
-                        <i class="text-warning">⚠️</i> {{ $warning }}
-                    </li>
-                    @endforeach
-                </ul>
-            </div>
-        </div>
-        @endif
-
-        <!-- Import Log -->
-        @if(session('import_log'))
-        <div class="card border-0 shadow-sm mb-4">
-            <div class="card-header bg-secondary text-white">
-                <h5 class="mb-0"><i>📋</i> Journal d'Import</h5>
-            </div>
-            <div class="card-body">
-                <div class="bg-dark text-light p-3 rounded" style="font-family: monospace; max-height: 300px; overflow-y: auto;">
-                    @foreach(session('import_log') as $logEntry)
-                    <div>{{ $logEntry['timestamp'] }} - {{ $logEntry['message'] }}</div>
-                    @endforeach
-                </div>
-            </div>
-        </div>
-        @endif
-
         <!-- Next Steps -->
         <div class="card border-0 shadow-sm">
             <div class="card-header bg-primary text-white">
@@ -188,9 +154,6 @@
                                 <i>🔄</i> Réessayer l'Import
                             </a>
                             @endif
-                            <button class="btn btn-outline-success" onclick="downloadReport()">
-                                <i>📄</i> Télécharger Rapport
-                            </button>
                         </div>
                     </div>
                 </div>
@@ -198,31 +161,4 @@
         </div>
     </div>
 </div>
-
-<script>
-function downloadReport() {
-    const report = {
-        import_date: new Date().toISOString(),
-        summary: {
-            imported: {{ session('import_stats.imported', 0) }},
-            skipped: {{ session('import_stats.skipped', 0) }},
-            errors: {{ session('import_stats.errors', 0) }},
-            total: {{ session('import_stats.total', 0) }},
-            success_rate: {{ session('import_stats.success_rate', 0) }}
-        },
-        errors: @json(session('import_errors', [])),
-        warnings: @json(session('import_warnings', [])),
-        log: @json(session('import_log', []))
-    };
-
-    const dataStr = JSON.stringify(report, null, 2);
-    const dataBlob = new Blob([dataStr], {type: 'application/json'});
-    const url = URL.createObjectURL(dataBlob);
-    const link = document.createElement('a');
-    link.href = url;
-    link.download = `import_report_${new Date().toISOString().split('T')[0]}.json`;
-    link.click();
-    URL.revokeObjectURL(url);
-}
-</script>
 @endsection

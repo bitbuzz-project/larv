@@ -1,666 +1,389 @@
-@extends('layouts.admin')
+<?php
 
-@section('title', 'Importer des Étudiants')
+namespace App\Http\Controllers\Admin;
 
-@section('content')
-<style>
-/* Include the custom styles here or link to external CSS file */
-.file-drop-zone {
-    border: 2px dashed #dee2e6;
-    border-radius: 8px;
-    padding: 40px;
-    text-align: center;
-    background-color: #f8f9fa;
-    transition: all 0.3s ease;
-    cursor: pointer;
-}
+use App\Http\Controllers\Controller;
+use App\Models\Student;
+use App\Http\Requests\StudentImportRequest;
+use Illuminate\Http\Request;
+use Illuminate\Support\Facades\DB;
+use Illuminate\Support\Facades\Log;
 
-.file-drop-zone:hover {
-    border-color: #ffc107;
-    background-color: #fff3cd;
-}
+class StudentController extends Controller
+{
+    /**
+     * Display a listing of students
+     */
+    public function index(Request $request)
+    {
+        $query = Student::query();
 
-.file-drop-zone.dragover {
-    border-color: #dc3545;
-    background-color: #f8d7da;
-}
-
-.json-preview {
-    background-color: #2d3748;
-    color: #e2e8f0;
-    border-radius: 8px;
-    padding: 1rem;
-    font-family: 'Courier New', monospace;
-    font-size: 0.875rem;
-    max-height: 300px;
-    overflow-y: auto;
-}
-
-.progress-overlay {
-    position: fixed;
-    top: 0;
-    left: 0;
-    width: 100%;
-    height: 100%;
-    background-color: rgba(0, 0, 0, 0.5);
-    display: none;
-    align-items: center;
-    justify-content: center;
-    z-index: 9999;
-}
-
-.spinner {
-    border: 4px solid #f3f3f3;
-    border-top: 4px solid #dc3545;
-    border-radius: 50%;
-    width: 40px;
-    height: 40px;
-    animation: spin 1s linear infinite;
-    margin: 0 auto 1rem;
-}
-
-@keyframes spin {
-    0% { transform: rotate(0deg); }
-    100% { transform: rotate(360deg); }
-}
-</style>
-
-<div class="row justify-content-center">
-    <div class="col-md-10">
-        <!-- Page Header -->
-        <div class="d-flex justify-content-between align-items-center mb-4">
-            <h2><i>📥</i> Importer des Étudiants</h2>
-            <a href="{{ route('admin.students.index') }}" class="btn btn-secondary">
-                <i>⬅️</i> Retour à la liste
-            </a>
-        </div>
-
-        <!-- Quick Stats -->
-        <div class="row mb-4">
-            <div class="col-md-4">
-                <div class="card border-0 shadow-sm text-center" style="background: linear-gradient(135deg, #17a2b8, #138496);">
-                    <div class="card-body text-white">
-                        <h3 id="current-students">{{ \App\Models\Student::count() }}</h3>
-                        <p class="mb-0">Étudiants Actuels</p>
-                    </div>
-                </div>
-            </div>
-            <div class="col-md-4">
-                <div class="card border-0 shadow-sm text-center" style="background: linear-gradient(135deg, #28a745, #20c997);">
-                    <div class="card-body text-white">
-                        <h3 id="ready-to-import">0</h3>
-                        <p class="mb-0">Prêts à Importer</p>
-                    </div>
-                </div>
-            </div>
-            <div class="col-md-4">
-                <div class="card border-0 shadow-sm text-center" style="background: linear-gradient(135deg, #ffc107, #e0a800);">
-                    <div class="card-body text-white">
-                        <h3 id="validation-status">En Attente</h3>
-                        <p class="mb-0">Statut</p>
-                    </div>
-                </div>
-            </div>
-        </div>
-
-        <div class="row">
-            <!-- Import Form -->
-            <div class="col-md-8">
-                <div class="card border-0 shadow-sm mb-4">
-                    <div class="card-header bg-danger text-white">
-                        <h5 class="mb-0"><i>📁</i> Sélectionner le Fichier JSON</h5>
-                    </div>
-                    <div class="card-body">
-                        <form method="POST" action="{{ route('admin.students.import') }}" enctype="multipart/form-data" id="import-form">
-                            @csrf
-
-                            <!-- File Drop Zone -->
-                            <div class="file-drop-zone mb-4" id="drop-zone">
-                                <div class="file-upload-icon">📁</div>
-                                <h5>Glissez-déposez votre fichier JSON ici</h5>
-                                <p class="text-muted">ou cliquez pour sélectionner un fichier</p>
-                                <input type="file"
-                                       class="d-none @error('json_file') is-invalid @enderror"
-                                       id="json_file"
-                                       name="json_file"
-                                       accept=".json,application/json">
-                            </div>
-
-                            @error('json_file')
-                                <div class="alert alert-danger">{{ $message }}</div>
-                            @enderror
-
-                            <!-- File Info -->
-                            <div id="file-info" class="mb-4" style="display: none;">
-                                <div class="alert alert-info">
-                                    <strong>Fichier sélectionné:</strong> <span id="file-name"></span><br>
-                                    <strong>Taille:</strong> <span id="file-size"></span><br>
-                                    <strong>Nombre d'étudiants:</strong> <span id="student-count"></span>
-                                </div>
-                            </div>
-
-                            <!-- Validation Results -->
-                            <div id="validation-results" class="mb-4" style="display: none;">
-                                <div class="card">
-                                    <div class="card-header">
-                                        <h6 class="mb-0">Résultats de la Validation</h6>
-                                    </div>
-                                    <div class="card-body" id="validation-content">
-                                        <!-- Content will be populated by JavaScript -->
-                                    </div>
-                                </div>
-                            </div>
-
-                            <!-- Preview Section -->
-                            <div id="preview-section" class="mb-4" style="display: none;">
-                                <h6>Aperçu du fichier (premiers 3 étudiants):</h6>
-                                <div class="json-preview" id="file-preview"></div>
-                            </div>
-
-                            <!-- Form Actions -->
-                            <div class="d-flex justify-content-end gap-2">
-                                <a href="{{ route('admin.students.index') }}" class="btn btn-secondary">
-                                    <i>❌</i> Annuler
-                                </a>
-                                <button type="submit" class="btn btn-danger" id="import-btn" disabled>
-                                    <i>📥</i> Importer les Étudiants
-                                </button>
-                            </div>
-                        </form>
-                    </div>
-                </div>
-            </div>
-
-            <!-- Instructions Sidebar -->
-            <div class="col-md-4">
-                <!-- Import Instructions -->
-                <div class="card border-0 shadow-sm mb-4">
-                    <div class="card-header bg-info text-white">
-                        <h6 class="mb-0"><i>ℹ️</i> Instructions</h6>
-                    </div>
-                    <div class="card-body">
-                        <h6>Champs Requis:</h6>
-                        <ul class="list-unstyled">
-                            <li><i style="color: green;">✓</i> <code>apoL_a01_code</code></li>
-                            <li><i style="color: green;">✓</i> <code>apoL_a02_nom</code></li>
-                            <li><i style="color: green;">✓</i> <code>apoL_a03_prenom</code></li>
-                        </ul>
-
-                        <h6 class="mt-3">Champs Optionnels:</h6>
-                        <ul class="list-unstyled small">
-                            <li><i>○</i> <code>apoL_a04_naissance</code></li>
-                            <li><i>○</i> <code>cod_etu</code></li>
-                            <li><i>○</i> <code>cod_sex_etu</code></li>
-                            <li><i>○</i> <code>lib_vil_nai_etu</code></li>
-                            <li><i>○</i> <code>cin_ind</code></li>
-                        </ul>
-
-                        <div class="alert alert-warning mt-3">
-                            <small>
-                                <strong>⚠️ Limites :</strong><br>
-                                • Max 1000 étudiants par fichier<br>
-                                • Taille max : 10MB<br>
-                                • Format : JSON uniquement
-                            </small>
-                        </div>
-                    </div>
-                </div>
-
-                <!-- Download Template -->
-                <div class="card border-0 shadow-sm">
-                    <div class="card-header bg-success text-white">
-                        <h6 class="mb-0"><i>📄</i> Modèle</h6>
-                    </div>
-                    <div class="card-body text-center">
-                        <p class="small">Téléchargez un exemple :</p>
-                        <button type="button" class="btn btn-outline-success btn-sm" onclick="downloadTemplate()">
-                            <i>⬇️</i> Télécharger Modèle
-                        </button>
-                    </div>
-                </div>
-            </div>
-        </div>
-    </div>
-</div>
-
-<!-- Progress Overlay -->
-<div class="progress-overlay" id="progress-overlay">
-    <div class="bg-white p-4 rounded shadow">
-        <div class="spinner"></div>
-        <h5>Importation en cours...</h5>
-        <p class="text-muted">Veuillez patienter pendant le traitement du fichier.</p>
-    </div>
-</div>
-
-<script>
-let selectedFile = null;
-let validationPassed = false;
-
-// File drop zone functionality
-const dropZone = document.getElementById('drop-zone');
-const fileInput = document.getElementById('json_file');
-
-dropZone.addEventListener('click', () => fileInput.click());
-
-dropZone.addEventListener('dragover', (e) => {
-    e.preventDefault();
-    dropZone.classList.add('dragover');
-});
-
-dropZone.addEventListener('dragleave', () => {
-    dropZone.classList.remove('dragover');
-});
-
-dropZone.addEventListener('drop', (e) => {
-    e.preventDefault();
-    dropZone.classList.remove('dragover');
-    const files = e.dataTransfer.files;
-    if (files.length > 0) {
-        fileInput.files = files;
-        handleFileSelection(files[0]);
-    }
-});
-
-fileInput.addEventListener('change', (e) => {
-    if (e.target.files.length > 0) {
-        handleFileSelection(e.target.files[0]);
-    }
-});
-
-function handleFileSelection(file) {
-    selectedFile = file;
-
-    // Show file info
-    document.getElementById('file-name').textContent = file.name;
-    document.getElementById('file-size').textContent = formatFileSize(file.size);
-    document.getElementById('file-info').style.display = 'block';
-
-    // Validate file
-    if (file.type === 'application/json' || file.name.endsWith('.json')) {
-        const reader = new FileReader();
-        reader.onload = function(e) {
-            try {
-                const jsonData = JSON.parse(e.target.result);
-                validateJsonData(jsonData);
-            } catch (error) {
-                showValidationResults(false, 'Fichier JSON invalide: ' + error.message);
-            }
-        };
-        reader.readAsText(file);
-    } else {
-        showValidationResults(false, 'Veuillez sélectionner un fichier JSON valide.');
-    }
-}
-
-function validateJsonData(data) {
-    const results = {
-        valid: true,
-        errors: [],
-        warnings: [],
-        studentCount: 0
-    };
-
-    if (!Array.isArray(data)) {
-        results.valid = false;
-        results.errors.push('Le fichier JSON doit contenir un tableau d\'étudiants.');
-    } else {
-        results.studentCount = data.length;
-
-        if (data.length === 0) {
-            results.valid = false;
-            results.errors.push('Le fichier est vide.');
-        } else if (data.length > 1000) {
-            results.valid = false;
-            results.errors.push('Maximum 1000 étudiants autorisés par fichier.');
-        } else {
-            // Validate structure
-            const requiredFields = ['apoL_a01_code', 'apoL_a02_nom', 'apoL_a03_prenom'];
-            const sampleSize = Math.min(10, data.length);
-
-            for (let i = 0; i < sampleSize; i++) {
-                const student = data[i];
-                for (const field of requiredFields) {
-                    if (!student[field]) {
-                        results.errors.push(`Champ requis manquant "${field}" à la ligne ${i + 1}`);
-                        results.valid = false;
-                    }
-                }
-            }
-
-            // Show preview
-            if (results.valid) {
-                showPreview(data.slice(0, 3));
-            }
-        }
-    }
-
-    showValidationResults(results.valid, null, results);
-    updateStats(results.studentCount, results.valid);
-}
-
-function showValidationResults(isValid, errorMessage, results = null) {
-    validationPassed = isValid;
-    const importBtn = document.getElementById('import-btn');
-    const validationResults = document.getElementById('validation-results');
-    const validationContent = document.getElementById('validation-content');
-
-    importBtn.disabled = !isValid;
-    validationResults.style.display = 'block';
-
-    if (isValid) {
-        validationContent.innerHTML = `
-            <div class="alert alert-success">
-                <i style="color: green;">✓</i> <strong>Validation réussie!</strong><br>
-                ${results.studentCount} étudiants prêts à être importés.
-            </div>
-        `;
-    } else {
-        let content = `<div class="alert alert-danger">
-            <i style="color: red;">✗</i> <strong>Erreurs de validation:</strong><br>`;
-
-        if (errorMessage) {
-            content += `• ${errorMessage}<br>`;
-        }
-
-        if (results && results.errors.length > 0) {
-            results.errors.forEach(error => {
-                content += `• ${error}<br>`;
+        // Search functionality
+        if ($request->filled('search')) {
+            $search = $request->search;
+            $query->where(function($q) use ($search) {
+                $q->where('apoL_a01_code', 'like', "%{$search}%")
+                  ->orWhere('apoL_a02_nom', 'like', "%{$search}%")
+                  ->orWhere('apoL_a03_prenom', 'like', "%{$search}%");
             });
         }
 
-        content += `</div>`;
-        validationContent.innerHTML = content;
+        $students = $query->orderBy('created_at', 'desc')->paginate(15);
+
+        return view('admin.students.index', compact('students'));
     }
-}
 
-function showPreview(students) {
-    const previewSection = document.getElementById('preview-section');
-    const filePreview = document.getElementById('file-preview');
+    /**
+     * Show the form for creating a new student
+     */
+    public function create()
+    {
+        return view('admin.students.create');
+    }
 
-    previewSection.style.display = 'block';
-    filePreview.textContent = JSON.stringify(students, null, 2);
-}
+    /**
+     * Store a newly created student
+     */
+    public function store(Request $request)
+    {
+        $validated = $request->validate([
+            'apoL_a01_code' => 'required|string|max:20|unique:students_base,apoL_a01_code',
+            'apoL_a02_nom' => 'required|string|max:100',
+            'apoL_a03_prenom' => 'required|string|max:100',
+            'apoL_a04_naissance' => 'required|string|max:20',
+            'cod_etu' => 'nullable|string|max:20',
+            'cin_ind' => 'nullable|string|max:20',
+            'cod_sex_etu' => 'nullable|string|max:5',
+            'lib_vil_nai_etu' => 'nullable|string|max:100',
+            'cod_etp' => 'nullable|string|max:20',
+            'cod_anu' => 'nullable|string|max:10',
+            'lib_etp' => 'nullable|string|max:200',
+        ]);
 
-function updateStats(studentCount, isValid) {
-    document.getElementById('ready-to-import').textContent = isValid ? studentCount : 0;
-    document.getElementById('validation-status').textContent = isValid ? 'Validé' : 'Erreur';
-}
-
-function formatFileSize(bytes) {
-    if (bytes === 0) return '0 Bytes';
-    const k = 1024;
-    const sizes = ['Bytes', 'KB', 'MB', 'GB'];
-    const i = Math.floor(Math.log(bytes) / Math.log(k));
-    return parseFloat((bytes / Math.pow(k, i)).toFixed(2)) + ' ' + sizes[i];
-}
-
-// Download template function
-function downloadTemplate() {
-    const template = [
-        {
-            "apoL_a01_code": "12345678",
-            "apoL_a02_nom": "Alami",
-            "apoL_a03_prenom": "Mohammed",
-            "apoL_a04_naissance": "15/03/2000",
-            "cod_etu": "E12345678",
-            "cod_sex_etu": "M",
-            "lib_vil_nai_etu": "Casablanca",
-            "cin_ind": "AB123456"
-        },
-        {
-            "apoL_a01_code": "12345679",
-            "apoL_a02_nom": "Benali",
-            "apoL_a03_prenom": "Fatima",
-            "apoL_a04_naissance": "22/07/1999",
-            "cod_etu": "E12345679",
-            "cod_sex_etu": "F",
-            "lib_vil_nai_etu": "Rabat",
-            "cin_ind": "CD789012"
-        },
-        {
-            "apoL_a01_code": "12345680",
-            "apoL_a02_nom": "Chakir",
-            "apoL_a03_prenom": "Ahmed",
-            "apoL_a04_naissance": "10/11/2001",
-            "cod_etu": "E12345680",
-            "cod_sex_etu": "M",
-            "lib_vil_nai_etu": "Fès",
-            "cin_ind": "EF345678"
+        try {
+            Student::create($validated);
+            return redirect()->route('admin.students.index')
+                           ->with('success', 'Étudiant créé avec succès.');
+        } catch (\Exception $e) {
+            return back()->withInput()
+                        ->with('error', 'Erreur lors de la création de l\'étudiant.');
         }
-    ];
-
-    const dataStr = JSON.stringify(template, null, 2);
-    const dataBlob = new Blob([dataStr], {type: 'application/json'});
-    const url = URL.createObjectURL(dataBlob);
-    const link = document.createElement('a');
-    link.href = url;
-    link.download = 'template_students.json';
-    link.click();
-    URL.revokeObjectURL(url);
-}
-
-// Form submission with loading state
-document.getElementById('import-form').addEventListener('submit', function(e) {
-    if (!validationPassed) {
-        e.preventDefault();
-        alert('Veuillez d\'abord corriger les erreurs de validation.');
-        return;
     }
 
-    const progressOverlay = document.getElementById('progress-overlay');
-    progressOverlay.style.display = 'flex';
+    /**
+     * Display the specified student
+     */
+    public function show(Student $student)
+    {
+        $notes_count = 0; // Will implement when Note model is ready
+        $reclamations_count = $student->reclamations()->count();
 
-    const importBtn = document.getElementById('import-btn');
-    importBtn.innerHTML = '<i class="spinner-border spinner-border-sm me-2"></i>Importation...';
-    importBtn.disabled = true;
-});
+        return view('admin.students.show', compact('student', 'notes_count', 'reclamations_count'));
+    }
 
-// Reset form when page loads
-document.addEventListener('DOMContentLoaded', function() {
-    const currentStudents = document.getElementById('current-students');
-    // You can update this via AJAX if needed
-});
-</script>
-@endsection@extends('layouts.admin')
+    /**
+     * Show the form for editing the specified student
+     */
+    public function edit(Student $student)
+    {
+        return view('admin.students.edit', compact('student'));
+    }
 
-@section('title', 'Importer des Étudiants')
+    /**
+     * Update the specified student
+     */
+    public function update(Request $request, Student $student)
+    {
+        $validated = $request->validate([
+            'apoL_a02_nom' => 'required|string|max:100',
+            'apoL_a03_prenom' => 'required|string|max:100',
+            'apoL_a04_naissance' => 'required|string|max:20',
+            'cod_etu' => 'nullable|string|max:20',
+            'cin_ind' => 'nullable|string|max:20',
+            'cod_sex_etu' => 'nullable|string|max:5',
+            'lib_vil_nai_etu' => 'nullable|string|max:100',
+            'cod_etp' => 'nullable|string|max:20',
+            'cod_anu' => 'nullable|string|max:10',
+            'lib_etp' => 'nullable|string|max:200',
+        ]);
 
-@section('content')
-<div class="row justify-content-center">
-    <div class="col-md-8">
-        <!-- Page Header -->
-        <div class="d-flex justify-content-between align-items-center mb-4">
-            <h2><i>📥</i> Importer des Étudiants</h2>
-            <a href="{{ route('admin.students.index') }}" class="btn btn-secondary">
-                <i>⬅️</i> Retour à la liste
-            </a>
-        </div>
+        try {
+            $student->update($validated);
+            return redirect()->route('admin.students.show', $student)
+                           ->with('success', 'Étudiant mis à jour avec succès.');
+        } catch (\Exception $e) {
+            return back()->withInput()
+                        ->with('error', 'Erreur lors de la mise à jour de l\'étudiant.');
+        }
+    }
 
-        <!-- Import Instructions -->
-        <div class="card border-0 shadow-sm mb-4">
-            <div class="card-header bg-info text-white">
-                <h5 class="mb-0"><i>ℹ️</i> Instructions d'Import</h5>
-            </div>
-            <div class="card-body">
-                <h6>Format JSON Requis:</h6>
-                <p>Le fichier JSON doit contenir un tableau d'objets avec les propriétés suivantes :</p>
-                <ul>
-                    <li><strong>apoL_a01_code</strong> (requis) : Code Apogée de l'étudiant</li>
-                    <li><strong>apoL_a02_nom</strong> (requis) : Nom de famille</li>
-                    <li><strong>apoL_a03_prenom</strong> (requis) : Prénom</li>
-                    <li><strong>apoL_a04_naissance</strong> (optionnel) : Date de naissance</li>
-                    <li>Et d'autres champs optionnels...</li>
-                </ul>
+    /**
+     * Remove the specified student
+     */
+    public function destroy(Student $student)
+    {
+        try {
+            $student->delete();
+            return redirect()->route('admin.students.index')
+                           ->with('success', 'Étudiant supprimé avec succès.');
+        } catch (\Exception $e) {
+            return redirect()->route('admin.students.index')
+                           ->with('error', 'Erreur lors de la suppression de l\'étudiant.');
+        }
+    }
 
-                <h6 class="mt-3">Exemple de fichier JSON :</h6>
-                <pre class="bg-light p-3 rounded"><code>[
-  {
-    "apoL_a01_code": "12345678",
-    "apoL_a02_nom": "Alami",
-    "apoL_a03_prenom": "Mohammed",
-    "apoL_a04_naissance": "15/03/2000",
-    "cod_sex_etu": "M",
-    "lib_vil_nai_etu": "Casablanca"
-  },
-  {
-    "apoL_a01_code": "12345679",
-    "apoL_a02_nom": "Benali",
-    "apoL_a03_prenom": "Fatima",
-    "apoL_a04_naissance": "22/07/1999",
-    "cod_sex_etu": "F"
-  }
-]</code></pre>
+    /**
+     * Show the import form
+     */
+    public function showImport()
+    {
+        return view('admin.students.import');
+    }
 
-                <div class="alert alert-warning mt-3">
-                    <strong>⚠️ Important :</strong>
-                    <ul class="mb-0">
-                        <li>Les étudiants avec des codes Apogée existants seront ignorés</li>
-                        <li>Taille maximale du fichier : 10MB</li>
-                        <li>Seuls les fichiers .json sont acceptés</li>
-                    </ul>
-                </div>
-            </div>
-        </div>
+    /**
+     * Handle JSON file import
+     */
+    public function import(Request $request)
+    {
+        // Validate the uploaded file
+        $request->validate([
+            'json_file' => [
+                'required',
+                'file',
+                'mimes:json',
+                'max:10240', // 10MB max
+            ],
+        ]);
 
-        <!-- Import Form -->
-        <div class="card border-0 shadow-sm">
-            <div class="card-header bg-danger text-white">
-                <h5 class="mb-0"><i>📁</i> Sélectionner le Fichier JSON</h5>
-            </div>
-            <div class="card-body">
-                <form method="POST" action="{{ route('admin.students.import') }}" enctype="multipart/form-data">
-                    @csrf
+        try {
+            $file = $request->file('json_file');
+            $jsonContent = file_get_contents($file->getPathname());
+            $jsonData = json_decode($jsonContent, true);
 
-                    <!-- File Input -->
-                    <div class="mb-4">
-                        <label for="json_file" class="form-label">
-                            Fichier JSON <span class="text-danger">*</span>
-                        </label>
-                        <input type="file"
-                               class="form-control @error('json_file') is-invalid @enderror"
-                               id="json_file"
-                               name="json_file"
-                               accept=".json,application/json"
-                               required>
-                        @error('json_file')
-                            <div class="invalid-feedback">{{ $message }}</div>
-                        @enderror
-                        <small class="form-text text-muted">
-                            Formats acceptés : .json (taille max : 10MB)
-                        </small>
-                    </div>
+            if (json_last_error() !== JSON_ERROR_NONE) {
+                return back()->with('error', 'Le fichier JSON est invalide.');
+            }
 
-                    <!-- Preview Section -->
-                    <div id="preview-section" class="mb-4" style="display: none;">
-                        <h6>Aperçu du fichier :</h6>
-                        <div class="border rounded p-3 bg-light">
-                            <pre id="file-preview" style="max-height: 200px; overflow-y: auto;"></pre>
-                        </div>
-                    </div>
+            // Handle the Oracle database export structure
+            $studentsData = [];
 
-                    <!-- Form Actions -->
-                    <div class="d-flex justify-content-end gap-2">
-                        <a href="{{ route('admin.students.index') }}" class="btn btn-secondary">
-                            <i>❌</i> Annuler
-                        </a>
-                        <button type="submit" class="btn btn-danger" id="import-btn" disabled>
-                            <i>📥</i> Importer les Étudiants
-                        </button>
-                    </div>
-                </form>
-            </div>
-        </div>
+            if (isset($jsonData['results']) && is_array($jsonData['results'])) {
+                foreach ($jsonData['results'] as $result) {
+                    if (isset($result['items']) && is_array($result['items'])) {
+                        $columns = $result['columns'] ?? [];
+                        $columnNames = array_column($columns, 'name');
 
-        <!-- Download Template -->
-        <div class="card border-0 shadow-sm mt-4">
-            <div class="card-header bg-success text-white">
-                <h5 class="mb-0"><i>📄</i> Modèle de Fichier</h5>
-            </div>
-            <div class="card-body text-center">
-                <p>Téléchargez un modèle de fichier JSON pour commencer :</p>
-                <button type="button" class="btn btn-outline-success" onclick="downloadTemplate()">
-                    <i>⬇️</i> Télécharger le Modèle JSON
-                </button>
-            </div>
-        </div>
-    </div>
-</div>
-
-<script>
-// File preview functionality
-document.getElementById('json_file').addEventListener('change', function(e) {
-    const file = e.target.files[0];
-    const previewSection = document.getElementById('preview-section');
-    const filePreview = document.getElementById('file-preview');
-    const importBtn = document.getElementById('import-btn');
-
-    if (file) {
-        if (file.type === 'application/json' || file.name.endsWith('.json')) {
-            const reader = new FileReader();
-            reader.onload = function(e) {
-                try {
-                    const jsonData = JSON.parse(e.target.result);
-                    filePreview.textContent = JSON.stringify(jsonData, null, 2);
-                    previewSection.style.display = 'block';
-                    importBtn.disabled = false;
-                } catch (error) {
-                    filePreview.textContent = 'Erreur : Fichier JSON invalide';
-                    previewSection.style.display = 'block';
-                    importBtn.disabled = true;
+                        foreach ($result['items'] as $item) {
+                            if (is_array($item)) {
+                                // Convert array of values to associative array using column names
+                                $studentRow = [];
+                                foreach ($item as $index => $value) {
+                                    if (isset($columnNames[$index])) {
+                                        $studentRow[$columnNames[$index]] = $value;
+                                    }
+                                }
+                                $studentsData[] = $studentRow;
+                            }
+                        }
+                    }
                 }
-            };
-            reader.readAsText(file);
-        } else {
-            previewSection.style.display = 'none';
-            importBtn.disabled = true;
-            alert('Veuillez sélectionner un fichier JSON valide.');
+            } else {
+                // Fallback: check if it's a simple array of student objects
+                if (is_array($jsonData)) {
+                    $studentsData = $jsonData;
+                } else {
+                    return back()->with('error', 'Structure JSON non reconnue. Le fichier doit contenir des données d\'étudiants.');
+                }
+            }
+
+            if (empty($studentsData)) {
+                return back()->with('error', 'Aucune donnée d\'étudiant trouvée dans le fichier.');
+            }
+
+            if (count($studentsData) > 1000) {
+                return back()->with('error', 'Le fichier ne peut pas contenir plus de 1000 étudiants à la fois.');
+            }
+
+            $imported = 0;
+            $skipped = 0;
+            $errors = [];
+
+            DB::beginTransaction();
+
+            foreach ($studentsData as $index => $studentData) {
+                try {
+                    // Map Oracle columns to our database columns
+                    $mappedData = $this->mapOracleToLocal($studentData);
+
+                    // Validate required fields
+                    if (!isset($mappedData['apoL_a01_code']) ||
+                        !isset($mappedData['apoL_a02_nom']) ||
+                        !isset($mappedData['apoL_a03_prenom'])) {
+                        $errors[] = [
+                            'line' => $index + 1,
+                            'code' => $mappedData['apoL_a01_code'] ?? 'N/A',
+                            'message' => 'Champs requis manquants (Code étudiant, nom, prénom)',
+                            'type' => 'validation'
+                        ];
+                        continue;
+                    }
+
+                    // Check if student already exists
+                    if (Student::where('apoL_a01_code', $mappedData['apoL_a01_code'])->exists()) {
+                        $skipped++;
+                        continue;
+                    }
+
+                    // Create student
+                    Student::create([
+                        'apoL_a01_code' => $mappedData['apoL_a01_code'],
+                        'apoL_a02_nom' => $mappedData['apoL_a02_nom'],
+                        'apoL_a03_prenom' => $mappedData['apoL_a03_prenom'],
+                        'apoL_a04_naissance' => $mappedData['apoL_a04_naissance'] ?? null,
+                        'cod_etu' => $mappedData['cod_etu'] ?? null,
+                        'cod_sex_etu' => $mappedData['cod_sex_etu'] ?? null,
+                        'lib_vil_nai_etu' => $mappedData['lib_vil_nai_etu'] ?? null,
+                        'cin_ind' => $mappedData['cin_ind'] ?? null,
+                        'cod_etp' => $mappedData['cod_etp'] ?? null,
+                        'cod_anu' => $mappedData['cod_anu'] ?? null,
+                        'cod_dip' => $mappedData['cod_dip'] ?? null,
+                        'lib_etp' => $mappedData['lib_etp'] ?? null,
+                        'lic_etp' => $mappedData['lic_etp'] ?? null,
+                    ]);
+
+                    $imported++;
+
+                } catch (\Exception $e) {
+                    $errors[] = [
+                        'line' => $index + 1,
+                        'code' => $mappedData['apoL_a01_code'] ?? 'N/A',
+                        'message' => $e->getMessage(),
+                        'type' => 'validation'
+                    ];
+                }
+            }
+
+            DB::commit();
+
+            // Store import statistics in session
+            session([
+                'import_stats' => [
+                    'imported' => $imported,
+                    'skipped' => $skipped,
+                    'errors' => count($errors),
+                    'total' => count($studentsData),
+                    'success_rate' => count($studentsData) > 0 ? ($imported / count($studentsData)) * 100 : 0
+                ],
+                'import_errors' => $errors
+            ]);
+
+            if ($imported > 0) {
+                $message = "Import réussi! {$imported} étudiants importés";
+                if ($skipped > 0) {
+                    $message .= ", {$skipped} ignorés (déjà existants)";
+                }
+                if (count($errors) > 0) {
+                    $message .= ", " . count($errors) . " erreurs";
+                }
+
+                return redirect()->route('admin.students.import.results')->with('success', $message);
+            } else {
+                return back()->with('error', 'Aucun étudiant n\'a pu être importé. Vérifiez les erreurs ci-dessus.');
+            }
+
+        } catch (\Exception $e) {
+            DB::rollback();
+            Log::error('Import error: ' . $e->getMessage());
+            return back()->with('error', 'Erreur lors de l\'import: ' . $e->getMessage());
         }
-    } else {
-        previewSection.style.display = 'none';
-        importBtn.disabled = true;
     }
-});
 
-// Download template function
-function downloadTemplate() {
-    const template = [
-        {
-            "apoL_a01_code": "12345678",
-            "apoL_a02_nom": "Alami",
-            "apoL_a03_prenom": "Mohammed",
-            "apoL_a04_naissance": "15/03/2000",
-            "cod_etu": "E12345678",
-            "cod_sex_etu": "M",
-            "lib_vil_nai_etu": "Casablanca",
-            "cin_ind": "AB123456"
-        },
-        {
-            "apoL_a01_code": "12345679",
-            "apoL_a02_nom": "Benali",
-            "apoL_a03_prenom": "Fatima",
-            "apoL_a04_naissance": "22/07/1999",
-            "cod_etu": "E12345679",
-            "cod_sex_etu": "F",
-            "lib_vil_nai_etu": "Rabat",
-            "cin_ind": "CD789012"
+       private function mapOracleToLocal($oracleData)
+    {
+        // Mapping Oracle columns to our database columns
+        $mapping = [
+            // Required fields
+            'COD_ETU' => 'apoL_a01_code',          // Code étudiant
+            'COD_ETU_1' => 'apoL_a01_code',        // Alternative code étudiant
+            'LIB_NOM_PAT_IND' => 'apoL_a02_nom',   // Nom de famille
+            'LIB_NOM_PAT_IND_1' => 'apoL_a02_nom', // Alternative nom de famille
+            'LIB_PR1_IND' => 'apoL_a03_prenom',    // Prénom
+            'LIB_PR1_IND_1' => 'apoL_a03_prenom',  // Alternative prénom
+
+            // Optional fields
+            'DATE_NAI_IND' => 'apoL_a04_naissance', // Date de naissance
+            'COD_SEX_ETU' => 'cod_sex_etu',         // Sexe
+            'LIB_VIL_NAI_ETU' => 'lib_vil_nai_etu', // Ville de naissance
+            'CIN_IND' => 'cin_ind',                 // CIN
+            'COD_ETP' => 'cod_etp',                 // Code ETP
+            'COD_ANU' => 'cod_anu',                 // Code année
+            'COD_DIP' => 'cod_dip',                 // Code diplôme
+            'LIB_ETP' => 'lib_etp',                 // Libellé ETP
+            'LIC_ETP' => 'lic_etp',                 // Licence ETP
+        ];
+
+        $mappedData = [];
+
+        foreach ($mapping as $oracleColumn => $localColumn) {
+            if (isset($oracleData[$oracleColumn])) {
+                $value = $oracleData[$oracleColumn];
+
+                // Handle date formatting if needed
+                if ($localColumn === 'apoL_a04_naissance' && !empty($value)) {
+                    $mappedData[$localColumn] = $this->formatDate($value);
+                } else {
+                    $mappedData[$localColumn] = $value;
+                }
+            }
         }
-    ];
 
-    const dataStr = JSON.stringify(template, null, 2);
-    const dataBlob = new Blob([dataStr], {type: 'application/json'});
-    const url = URL.createObjectURL(dataBlob);
-    const link = document.createElement('a');
-    link.href = url;
-    link.download = 'template_students.json';
-    link.click();
-    URL.revokeObjectURL(url);
+        // Also include cod_etu as a copy of apoL_a01_code if not already set
+        if (isset($mappedData['apoL_a01_code']) && !isset($mappedData['cod_etu'])) {
+            $mappedData['cod_etu'] = $mappedData['apoL_a01_code'];
+        }
+
+        return $mappedData;
+    }
+
+    /**
+     * Format date to consistent format
+     */
+    private function formatDate($dateString)
+    {
+        if (empty($dateString)) {
+            return null;
+        }
+
+        try {
+            // Try to parse various date formats
+            $date = \DateTime::createFromFormat('Y-m-d', $dateString);
+            if (!$date) {
+                $date = \DateTime::createFromFormat('d/m/Y', $dateString);
+            }
+            if (!$date) {
+                $date = \DateTime::createFromFormat('Y-m-d H:i:s', $dateString);
+            }
+            if (!$date) {
+                // If parsing fails, return the original string
+                return $dateString;
+            }
+
+            return $date->format('d/m/Y');
+        } catch (\Exception $e) {
+            return $dateString; // Return original if formatting fails
+        }
+    }
+
+    /**
+     * Show import results
+     */
+    public function importResults()
+    {
+        if (!session()->has('import_stats')) {
+            return redirect()->route('admin.students.import')
+                           ->with('error', 'Aucun résultat d\'import trouvé.');
+        }
+
+        return view('admin.students.import-results');
+    }
 }
-
-// Form submission with loading state
-document.querySelector('form').addEventListener('submit', function() {
-    const importBtn = document.getElementById('import-btn');
-    importBtn.innerHTML = '<i class="spinner-border spinner-border-sm me-2"></i>Importation en cours...';
-    importBtn.disabled = true;
-});
-</script>
-@endsection

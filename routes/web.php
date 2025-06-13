@@ -38,6 +38,7 @@ Route::middleware(['auth', 'admin'])->prefix('admin')->name('admin.')->group(fun
     // Student Import/Export routes
     Route::get('/students-import', [AdminStudentController::class, 'showImport'])->name('students.import');
     Route::post('/students-import', [AdminStudentController::class, 'import'])->name('students.import');
+    Route::get('/students-import-results', [AdminStudentController::class, 'importResults'])->name('students.import.results');
     Route::get('/students-export', [AdminStudentController::class, 'export'])->name('students.export');
 });
 

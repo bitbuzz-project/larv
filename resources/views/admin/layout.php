@@ -114,7 +114,6 @@
 
         <!-- Admin Logo/Header -->
         <div class="px-3 text-center py-3">
-            <img src="{{ asset('images/logo.png') }}" alt="Logo" class="img-fluid mb-2" style="max-width: 120px;">
             <h5 class="mb-0">Admin Panel</h5>
         </div>
 
@@ -139,13 +138,13 @@
 
             <div class="sidebar-section">
                 <div class="sidebar-section-title">Gestion des étudiants</div>
-                <a href="{{ route('admin.students.index') }}" class="btn btn-link text-start {{ request()->routeIs('admin.students.*') ? 'active' : '' }}">
+                <a href="{{ route('admin.students.index') }}" class="btn btn-link text-start {{ request()->routeIs('admin.students.index') ? 'active' : '' }}">
                     <i>👥</i> Liste des étudiants
                 </a>
-                <a href="{{ route('admin.students.create') }}" class="btn btn-link text-start">
+                <a href="{{ route('admin.students.create') }}" class="btn btn-link text-start {{ request()->routeIs('admin.students.create') ? 'active' : '' }}">
                     <i>➕</i> Ajouter étudiant
                 </a>
-                <a href="#" class="btn btn-link text-start">
+                <a href="{{ route('admin.students.import') }}" class="btn btn-link text-start {{ request()->routeIs('admin.students.import*') ? 'active' : '' }}">
                     <i>📥</i> Importer JSON
                 </a>
                 <a href="#" class="btn btn-link text-start">
