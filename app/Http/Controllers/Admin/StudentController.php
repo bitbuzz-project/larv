@@ -145,13 +145,19 @@ class StudentController extends Controller
      */
     public function import(Request $request)
     {
+
+            // Increase execution limits for large imports
+    set_time_limit(300); // 5 minutes
+    ini_set('memory_limit', '512M'); // 512MB memory
+
+
         // Validate the uploaded file
         $request->validate([
             'json_file' => [
                 'required',
                 'file',
                 'mimes:json',
-                'max:10240', // 10MB max
+                'max:51200', // 10MB max
             ],
         ]);
 
@@ -200,7 +206,7 @@ class StudentController extends Controller
                 return back()->with('error', 'Aucune donnée d\'étudiant trouvée dans le fichier.');
             }
 
-            if (count($studentsData) > 1000) {
+            if (count($studentsData) > 20000) {
                 return back()->with('error', 'Le fichier ne peut pas contenir plus de 1000 étudiants à la fois.');
             }
 

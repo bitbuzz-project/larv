@@ -179,27 +179,31 @@
                         <h6 class="mb-0"><i>ℹ️</i> Instructions</h6>
                     </div>
                     <div class="card-body">
+                        <h6>Format JSON Attendu:</h6>
+                        <p class="small">Le fichier doit contenir un tableau d'objets étudiants.</p>
+
                         <h6>Champs Requis:</h6>
                         <ul class="list-unstyled">
-                            <li><i style="color: green;">✓</i> <code>apoL_a01_code</code></li>
-                            <li><i style="color: green;">✓</i> <code>apoL_a02_nom</code></li>
-                            <li><i style="color: green;">✓</i> <code>apoL_a03_prenom</code></li>
+                            <li><i style="color: green;">✓</i> <code>COD_ETU</code> ou <code>COD_ETU_1</code></li>
+                            <li><i style="color: green;">✓</i> <code>LIB_NOM_PAT_IND</code> ou <code>LIB_NOM_PAT_IND_1</code></li>
+                            <li><i style="color: green;">✓</i> <code>LIB_PR1_IND</code> ou <code>LIB_PR1_IND_1</code></li>
                         </ul>
 
                         <h6 class="mt-3">Champs Optionnels:</h6>
                         <ul class="list-unstyled small">
-                            <li><i>○</i> <code>apoL_a04_naissance</code></li>
-                            <li><i>○</i> <code>cod_etu</code></li>
-                            <li><i>○</i> <code>cod_sex_etu</code></li>
-                            <li><i>○</i> <code>lib_vil_nai_etu</code></li>
-                            <li><i>○</i> <code>cin_ind</code></li>
+                            <li><i>○</i> <code>DATE_NAI_IND</code> (Date naissance)</li>
+                            <li><i>○</i> <code>COD_SEX_ETU</code> (Sexe)</li>
+                            <li><i>○</i> <code>LIB_VIL_NAI_ETU</code> (Ville naissance)</li>
+                            <li><i>○</i> <code>CIN_IND</code> (CIN)</li>
+                            <li><i>○</i> <code>COD_ETP</code> (Code ETP)</li>
+                            <li><i>○</i> <code>LIB_ETP</code> (Libellé ETP)</li>
                         </ul>
 
                         <div class="alert alert-warning mt-3">
                             <small>
                                 <strong>⚠️ Limites :</strong><br>
-                                • Max 1000 étudiants par fichier<br>
-                                • Taille max : 10MB<br>
+                                • Max 20000 étudiants par fichier<br>
+                                • Taille max : 50MB<br>
                                 • Format : JSON uniquement
                             </small>
                         </div>
@@ -300,37 +304,152 @@ function validateJsonData(data) {
         studentCount: 0
     };
 
-    if (!Array.isArray(data)) {
-        results.valid = false;
-        results.errors.push('Le fichier JSON doit contenir un tableau d\'étudiants.');
-    } else {
-        results.studentCount = data.length;
+    console.log('Raw JSON data structure:', data);
 
-        if (data.length === 0) {
-            results.valid = false;
-            results.errors.push('Le fichier est vide.');
-        } else if (data.length > 1000) {
-            results.valid = false;
-            results.errors.push('Maximum 1000 étudiants autorisés par fichier.');
-        } else {
-            // Validate structure
-            const requiredFields = ['apoL_a01_code', 'apoL_a02_nom', 'apoL_a03_prenom'];
-            const sampleSize = Math.min(10, data.length);
+    // Handle Oracle export format
+    let studentsData = [];
 
-            for (let i = 0; i < sampleSize; i++) {
-                const student = data[i];
-                for (const field of requiredFields) {
-                    if (!student[field]) {
-                        results.errors.push(`Champ requis manquant "${field}" à la ligne ${i + 1}`);
-                        results.valid = false;
+    // Debug: Show JSON structure
+    results.warnings.push(`Structure détectée: ${Array.isArray(data) ? 'Array' : typeof data}`);
+
+    if (data.results && Array.isArray(data.results)) {
+        // Oracle export format
+        console.log('Oracle format detected, results length:', data.results.length);
+
+        data.results.forEach((result, resultIndex) => {
+            console.log(`Processing result ${resultIndex}:`, result);
+
+            if (result.items && Array.isArray(result.items)) {
+                const columns = result.columns || [];
+                const columnNames = columns.map(col => col.name || col);
+
+                console.log('Column names:', columnNames);
+
+                result.items.forEach((item, itemIndex) => {
+                    if (Array.isArray(item)) {
+                        const studentRow = {};
+                        item.forEach((value, index) => {
+                            if (columnNames[index]) {
+                                studentRow[columnNames[index]] = value;
+                            }
+                        });
+                        studentsData.push(studentRow);
+                        console.log(`Student ${itemIndex}:`, studentRow);
+                    } else if (typeof item === 'object' && item !== null) {
+                        // Item is already an object
+                        studentsData.push(item);
+                        console.log(`Student object ${itemIndex}:`, item);
                     }
+                });
+            } else if (result.data && Array.isArray(result.data)) {
+                // Alternative structure: result.data
+                studentsData = studentsData.concat(result.data);
+            } else if (Array.isArray(result)) {
+                // Result is directly an array
+                studentsData = studentsData.concat(result);
+            }
+        });
+    } else if (Array.isArray(data)) {
+        // Simple array format
+        console.log('Simple array format detected, length:', data.length);
+        studentsData = data;
+    } else if (data.data && Array.isArray(data.data)) {
+        // Data wrapped in data property
+        console.log('Data.data format detected, length:', data.data.length);
+        studentsData = data.data;
+    } else if (data.items && Array.isArray(data.items)) {
+        // Data wrapped in items property
+        console.log('Data.items format detected, length:', data.items.length);
+        studentsData = data.items;
+    } else {
+        // Try to find any array in the object
+        const keys = Object.keys(data);
+        let foundArray = false;
+
+        for (const key of keys) {
+            if (Array.isArray(data[key]) && data[key].length > 0) {
+                console.log(`Found array in property '${key}', length:`, data[key].length);
+                studentsData = data[key];
+                foundArray = true;
+                results.warnings.push(`Données trouvées dans la propriété: ${key}`);
+                break;
+            }
+        }
+
+        if (!foundArray) {
+            results.valid = false;
+            results.errors.push(`Structure JSON non reconnue. Propriétés disponibles: ${keys.join(', ')}`);
+            console.log('Available properties:', keys);
+            console.log('Full data object:', data);
+        }
+    }
+
+    console.log('Final studentsData length:', studentsData.length);
+    console.log('Sample student data:', studentsData.slice(0, 2));
+
+    if (studentsData.length === 0) {
+        results.valid = false;
+        results.errors.push('Aucune donnée d\'étudiant trouvée dans le fichier.');
+
+        // Add debugging info
+        if (typeof data === 'object' && data !== null) {
+            const keys = Object.keys(data);
+            results.errors.push(`Propriétés trouvées dans le JSON: ${keys.join(', ')}`);
+
+            // Show first level structure
+            keys.forEach(key => {
+                const value = data[key];
+                if (Array.isArray(value)) {
+                    results.errors.push(`- ${key}: Array de ${value.length} éléments`);
+                } else if (typeof value === 'object' && value !== null) {
+                    results.errors.push(`- ${key}: Objet avec propriétés [${Object.keys(value).join(', ')}]`);
+                } else {
+                    results.errors.push(`- ${key}: ${typeof value}`);
+                }
+            });
+        }
+    } else if (studentsData.length > 20000) {
+        results.valid = false;
+        results.errors.push('Maximum 20000 étudiants autorisés par fichier.');
+    } else {
+        results.studentCount = studentsData.length;
+
+        // Show sample of first student for debugging
+        if (studentsData.length > 0) {
+            const firstStudent = studentsData[0];
+            const availableFields = Object.keys(firstStudent);
+            results.warnings.push(`Champs disponibles dans le premier étudiant: ${availableFields.slice(0, 10).join(', ')}${availableFields.length > 10 ? '...' : ''}`);
+        }
+
+        // Validate structure
+        const requiredFields = ['COD_ETU', 'LIB_NOM_PAT_IND', 'LIB_PR1_IND'];
+        const alternativeFields = ['COD_ETU_1', 'LIB_NOM_PAT_IND_1', 'LIB_PR1_IND_1'];
+        const sampleSize = Math.min(5, studentsData.length);
+
+        for (let i = 0; i < sampleSize; i++) {
+            const student = studentsData[i];
+            if (!student || typeof student !== 'object') {
+                results.errors.push(`Élément ${i + 1} n'est pas un objet valide`);
+                results.valid = false;
+                continue;
+            }
+
+            for (let j = 0; j < requiredFields.length; j++) {
+                const field = requiredFields[j];
+                const altField = alternativeFields[j];
+                if (!student[field] && !student[altField]) {
+                    results.errors.push(`Champ requis manquant "${field}" ou "${altField}" à la ligne ${i + 1}`);
+                    results.valid = false;
                 }
             }
+        }
 
-            // Show preview
-            if (results.valid) {
-                showPreview(data.slice(0, 3));
-            }
+        // Show preview
+        if (results.valid) {
+            showPreview(studentsData.slice(0, 3));
+        } else {
+            // Show preview anyway for debugging
+            showPreview(studentsData.slice(0, 1));
         }
     }
 
@@ -352,6 +471,7 @@ function showValidationResults(isValid, errorMessage, results = null) {
             <div class="alert alert-success">
                 <i style="color: green;">✓</i> <strong>Validation réussie!</strong><br>
                 ${results.studentCount} étudiants prêts à être importés.
+                ${results.warnings.length > 0 ? '<br><small>' + results.warnings.join('<br>') + '</small>' : ''}
             </div>
         `;
     } else {
@@ -365,6 +485,13 @@ function showValidationResults(isValid, errorMessage, results = null) {
         if (results && results.errors.length > 0) {
             results.errors.forEach(error => {
                 content += `• ${error}<br>`;
+            });
+        }
+
+        if (results && results.warnings.length > 0) {
+            content += `<br><strong>Informations de débogage:</strong><br>`;
+            results.warnings.forEach(warning => {
+                content += `<small>• ${warning}</small><br>`;
             });
         }
 
@@ -398,34 +525,37 @@ function formatFileSize(bytes) {
 function downloadTemplate() {
     const template = [
         {
-            "apoL_a01_code": "12345678",
-            "apoL_a02_nom": "Alami",
-            "apoL_a03_prenom": "Mohammed",
-            "apoL_a04_naissance": "15/03/2000",
-            "cod_etu": "E12345678",
-            "cod_sex_etu": "M",
-            "lib_vil_nai_etu": "Casablanca",
-            "cin_ind": "AB123456"
+            "COD_ETU": "12345678",
+            "LIB_NOM_PAT_IND": "Alami",
+            "LIB_PR1_IND": "Mohammed",
+            "DATE_NAI_IND": "15/03/2000",
+            "COD_SEX_ETU": "M",
+            "LIB_VIL_NAI_ETU": "Casablanca",
+            "CIN_IND": "AB123456",
+            "COD_ETP": "ETP001",
+            "LIB_ETP": "Licence Fondamentale"
         },
         {
-            "apoL_a01_code": "12345679",
-            "apoL_a02_nom": "Benali",
-            "apoL_a03_prenom": "Fatima",
-            "apoL_a04_naissance": "22/07/1999",
-            "cod_etu": "E12345679",
-            "cod_sex_etu": "F",
-            "lib_vil_nai_etu": "Rabat",
-            "cin_ind": "CD789012"
+            "COD_ETU": "12345679",
+            "LIB_NOM_PAT_IND": "Benali",
+            "LIB_PR1_IND": "Fatima",
+            "DATE_NAI_IND": "22/07/1999",
+            "COD_SEX_ETU": "F",
+            "LIB_VIL_NAI_ETU": "Rabat",
+            "CIN_IND": "CD789012",
+            "COD_ETP": "ETP001",
+            "LIB_ETP": "Licence Fondamentale"
         },
         {
-            "apoL_a01_code": "12345680",
-            "apoL_a02_nom": "Chakir",
-            "apoL_a03_prenom": "Ahmed",
-            "apoL_a04_naissance": "10/11/2001",
-            "cod_etu": "E12345680",
-            "cod_sex_etu": "M",
-            "lib_vil_nai_etu": "Fès",
-            "cin_ind": "EF345678"
+            "COD_ETU": "12345680",
+            "LIB_NOM_PAT_IND": "Chakir",
+            "LIB_PR1_IND": "Ahmed",
+            "DATE_NAI_IND": "10/11/2001",
+            "COD_SEX_ETU": "M",
+            "LIB_VIL_NAI_ETU": "Fès",
+            "CIN_IND": "EF345678",
+            "COD_ETP": "ETP002",
+            "LIB_ETP": "Master Spécialisé"
         }
     ];
 
