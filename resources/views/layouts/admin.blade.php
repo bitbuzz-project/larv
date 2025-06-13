@@ -114,7 +114,6 @@
 
         <!-- Admin Logo/Header -->
         <div class="px-3 text-center py-3">
-            <img src="{{ asset('images/logo.png') }}" alt="Logo" class="img-fluid mb-2" style="max-width: 120px;">
             <h5 class="mb-0">Admin Panel</h5>
         </div>
 

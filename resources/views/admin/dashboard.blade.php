@@ -122,4 +122,45 @@
                     <div class="text-center mt-3">
                         <a href="{{ route('admin.students.index') }}" class="btn btn-outline-primary btn-sm">Voir tous les étudiants</a>
                     </div>
-                @
+                @endif
+            </div>
+        </div>
+    </div>
+
+    <div class="col-md-6 mb-4">
+        <div class="card border-0 shadow-sm h-100">
+            <div class="card-header bg-light">
+                <h5 class="mb-0"><i>📊</i> Informations Système</h5>
+            </div>
+            <div class="card-body">
+                <div class="row text-center">
+                    <div class="col-6 mb-3">
+                        <div class="border rounded p-3">
+                            <h4 class="text-success">{{ $stats['pending_reclamations'] }}</h4>
+                            <small class="text-muted">Réclamations en attente</small>
+                        </div>
+                    </div>
+                    <div class="col-6 mb-3">
+                        <div class="border rounded p-3">
+                            <h4 class="text-info">{{ $stats['resolved_reclamations'] }}</h4>
+                            <small class="text-muted">Réclamations résolues</small>
+                        </div>
+                    </div>
+                </div>
+
+                <div class="mt-3">
+                    <h6>Actions Système</h6>
+                    <div class="d-grid gap-2">
+                        <button class="btn btn-outline-secondary btn-sm">
+                            <i>🔄</i> Actualiser les données
+                        </button>
+                        <button class="btn btn-outline-warning btn-sm">
+                            <i>📥</i> Exporter les données
+                        </button>
+                    </div>
+                </div>
+            </div>
+        </div>
+    </div>
+</div>
+@endsection
