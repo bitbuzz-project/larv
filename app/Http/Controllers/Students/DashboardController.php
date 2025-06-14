@@ -17,7 +17,7 @@ class DashboardController extends Controller
             'total_notes' => 0, // Will implement when Note model is ready
             'total_reclamations' => $student->reclamations()->count(),
             'pending_reclamations' => $student->reclamations()->where('status', 'pending')->count(),
-            'total_filieres' => 0, // Will implement when needed
+            'resolved_reclamations' => $student->reclamations()->where('status', 'resolved')->count(),
         ];
 
         // Get recent notes (placeholder for now)

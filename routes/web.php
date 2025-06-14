@@ -5,6 +5,8 @@ use App\Http\Controllers\Admin\AdminController;
 use App\Http\Controllers\Admin\StudentController as AdminStudentController;
 use App\Http\Controllers\Students\DashboardController;
 use Illuminate\Support\Facades\Route;
+use App\Http\Controllers\Students\ProfileController;
+use App\Http\Controllers\Students\SituationPedagogiqueController;
 
 /*
 |--------------------------------------------------------------------------
@@ -45,6 +47,17 @@ Route::middleware(['auth', 'admin'])->prefix('admin')->name('admin.')->group(fun
 // Student Routes
 Route::middleware(['auth', 'student'])->prefix('student')->name('student.')->group(function () {
     Route::get('/dashboard', [DashboardController::class, 'index'])->name('dashboard');
+
+    // Profile Routes
+    Route::get('/profile', [ProfileController::class, 'show'])->name('profile.show');
+    Route::get('/profile/edit', [ProfileController::class, 'edit'])->name('profile.edit');
+    Route::put('/profile', [ProfileController::class, 'update'])->name('profile.update');
+    Route::get('/profile/change-password', [ProfileController::class, 'showChangePasswordForm'])->name('profile.change-password');
+    Route::post('/profile/change-password', [ProfileController::class, 'updatePassword'])->name('profile.update-password');
+        // Situation Pédagogique Routes
+    Route::get('/situation-pedagogique', [SituationPedagogiqueController::class, 'index'])->name('situation-pedagogique.index');
+    Route::get('/situation-pedagogique/{year}', [SituationPedagogiqueController::class, 'showYear'])->name('situation-pedagogique.year');
+
 });
 
 // Fallback route for testing

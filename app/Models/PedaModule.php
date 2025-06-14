@@ -5,19 +5,29 @@ namespace App\Models;
 use Illuminate\Database\Eloquent\Factories\HasFactory;
 use Illuminate\Database\Eloquent\Model;
 
-class Administrative extends Model
+class PedaModule extends Model
 {
     use HasFactory;
 
-    protected $table = 'administative'; // Keep the existing table name
+    protected $table = 'peda_modules';
 
     protected $fillable = [
         'apogee',
-        'filliere',
+        'module_code',
+        'module_name',
+        'module_name_ar',
+        'credits',
+        'coefficient',
+        'semester',
         'annee_scolaire',
+        'status',
+        'professor',
+        'schedule',
     ];
 
     protected $casts = [
+        'credits' => 'integer',
+        'coefficient' => 'decimal:2',
         'created_at' => 'datetime',
         'updated_at' => 'datetime',
     ];
@@ -28,10 +38,20 @@ class Administrative extends Model
         return $this->belongsTo(Student::class, 'apogee', 'apoL_a01_code');
     }
 
+    public function administrative()
+    {
+        return $this->belongsTo(Administrative::class, 'apogee', 'apogee');
+    }
+
     // Scopes
     public function scopeForStudent($query, $apogee)
     {
         return $query->where('apogee', $apogee);
+    }
+
+    public function scopeBySemester($query, $semester)
+    {
+        return $query->where('semester', $semester);
     }
 
     public function scopeCurrentYear($query, $year = null)
@@ -41,8 +61,8 @@ class Administrative extends Model
     }
 
     // Accessors
-    public function getFormattedFiliereAttribute()
+    public function getFullModuleNameAttribute()
     {
-        return ucfirst(strtolower($this->filliere));
+        return $this->module_name_ar ?: $this->module_name;
     }
 }

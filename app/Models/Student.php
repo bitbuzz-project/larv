@@ -75,6 +75,29 @@ class Student extends Authenticatable
         return $this->hasMany(Note::class, 'apoL_a01_code', 'apoL_a01_code');
     }
 
+    public function administratives()
+{
+    return $this->hasMany(Administrative::class, 'apogee', 'apoL_a01_code');
+}
+
+public function pedaModules()
+{
+    return $this->hasMany(PedaModule::class, 'apogee', 'apoL_a01_code');
+}
+
+public function currentAdministrative()
+{
+    return $this->hasOne(Administrative::class, 'apogee', 'apoL_a01_code')
+                ->where('annee_scolaire', '2024-2025');
+}
+
+public function currentModules()
+{
+    return $this->hasMany(PedaModule::class, 'apogee', 'apoL_a01_code')
+                ->where('annee_scolaire', '2024-2025')
+                ->where('status', 'active');
+}
+
     public function filieres()
     {
         return $this->hasMany(Administative::class, 'apogee', 'apoL_a01_code');
