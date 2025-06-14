@@ -304,7 +304,22 @@ function validateJsonData(data) {
         studentCount: 0
     };
 
-    console.log('Raw JSON data structure:', data);
+        console.log('Raw JSON data received:', typeof data);
+    console.log('Is data an object?', typeof data === 'object');
+    console.log('Data keys:', Object.keys(data));
+
+    if (data.results) {
+        console.log('Results found:', Array.isArray(data.results), data.results.length);
+        if (data.results[0]) {
+            console.log('First result keys:', Object.keys(data.results[0]));
+            if (data.results[0].items) {
+                console.log('Items found:', data.results[0].items.length);
+            }
+            if (data.results[0].columns) {
+                console.log('Columns found:', data.results[0].columns.length);
+            }
+        }
+    }
 
     // Handle Oracle export format
     let studentsData = [];
@@ -312,44 +327,50 @@ function validateJsonData(data) {
     // Debug: Show JSON structure
     results.warnings.push(`Structure détectée: ${Array.isArray(data) ? 'Array' : typeof data}`);
 
-    if (data.results && Array.isArray(data.results)) {
-        // Oracle export format
-        console.log('Oracle format detected, results length:', data.results.length);
+if (data.results && Array.isArray(data.results)) {
+    // Oracle export format
+    console.log('Oracle format detected, results length:', data.results.length);
 
-        data.results.forEach((result, resultIndex) => {
-            console.log(`Processing result ${resultIndex}:`, result);
+    data.results.forEach((result, resultIndex) => {
+        console.log(`Processing result ${resultIndex}:`, result);
 
-            if (result.items && Array.isArray(result.items)) {
-                const columns = result.columns || [];
-                const columnNames = columns.map(col => col.name || col);
+        if (result.items && Array.isArray(result.items) && result.columns && Array.isArray(result.columns)) {
+            const columns = result.columns;
+            const columnNames = columns.map(col => col.name || col);
 
-                console.log('Column names:', columnNames);
+            console.log('Column names found:', columnNames.length, 'columns');
+            console.log('Items found:', result.items.length, 'items');
 
-                result.items.forEach((item, itemIndex) => {
-                    if (Array.isArray(item)) {
-                        const studentRow = {};
-                        item.forEach((value, index) => {
-                            if (columnNames[index]) {
-                                studentRow[columnNames[index]] = value;
-                            }
-                        });
-                        studentsData.push(studentRow);
+            result.items.forEach((item, itemIndex) => {
+                if (Array.isArray(item)) {
+                    // Item is an array of values, map to column names
+                    const studentRow = {};
+                    item.forEach((value, index) => {
+                        if (columnNames[index]) {
+                            studentRow[columnNames[index]] = value;
+                        }
+                    });
+                    studentsData.push(studentRow);
+
+                    // Log first few students for debugging
+                    if (itemIndex < 3) {
                         console.log(`Student ${itemIndex}:`, studentRow);
-                    } else if (typeof item === 'object' && item !== null) {
-                        // Item is already an object
-                        studentsData.push(item);
+                    }
+                } else if (typeof item === 'object' && item !== null) {
+                    // Item is already an object
+                    studentsData.push(item);
+                    if (itemIndex < 3) {
                         console.log(`Student object ${itemIndex}:`, item);
                     }
-                });
-            } else if (result.data && Array.isArray(result.data)) {
-                // Alternative structure: result.data
-                studentsData = studentsData.concat(result.data);
-            } else if (Array.isArray(result)) {
-                // Result is directly an array
-                studentsData = studentsData.concat(result);
-            }
-        });
-    } else if (Array.isArray(data)) {
+                }
+            });
+        } else {
+            console.log('Missing items or columns in result:', result);
+        }
+    });
+
+    console.log('Total students parsed:', studentsData.length);
+} else if (Array.isArray(data)) {
         // Simple array format
         console.log('Simple array format detected, length:', data.length);
         studentsData = data;
@@ -574,6 +595,14 @@ document.getElementById('import-form').addEventListener('submit', function(e) {
     if (!validationPassed) {
         e.preventDefault();
         alert('Veuillez d\'abord corriger les erreurs de validation.');
+        return;
+    }
+
+    // Check if file is still selected
+    const fileInput = document.getElementById('json_file');
+    if (!fileInput.files || fileInput.files.length === 0) {
+        e.preventDefault();
+        alert('Veuillez sélectionner à nouveau le fichier JSON.');
         return;
     }
 
