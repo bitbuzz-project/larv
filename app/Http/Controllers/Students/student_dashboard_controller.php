@@ -1,6 +1,6 @@
 <?php
 
-namespace App\Http\Controllers\Student;
+namespace App\Http\Controllers\Students;
 
 use App\Http\Controllers\Controller;
 use Illuminate\Http\Request;
@@ -11,13 +11,13 @@ class DashboardController extends Controller
     public function index()
     {
         $student = Auth::user();
-        
+
         // Get basic statistics
         $stats = [
             'total_notes' => 0, // Will implement when Note model is ready
             'total_reclamations' => $student->reclamations()->count(),
             'pending_reclamations' => $student->reclamations()->where('status', 'pending')->count(),
-            'total_filieres' => $student->filieres()->count(),
+            'total_filieres' => 0, // Will implement when needed
         ];
 
         // Get recent notes (placeholder for now)
