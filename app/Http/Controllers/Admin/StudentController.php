@@ -200,36 +200,15 @@ class StudentController extends Controller
             }
 
 
-            $studentsData = [];
-            if (isset($jsonData['results']) && is_array($jsonData['results'])) {
+$studentsData = [];
+
+if (isset($jsonData['results']) && is_array($jsonData['results'])) {
     // Oracle export format
     foreach ($jsonData['results'] as $result) {
-        if (isset($result['items']) && is_array($result['items']) &&
-            isset($result['columns']) && is_array($result['columns'])) {
-
-            $columns = $result['columns'];
-            $columnNames = array_map(function($col) {
-                return strtolower($col['name'] ?? $col);
-            }, $columns);
-
+        if (isset($result['items']) && is_array($result['items'])) {
+            // The items are already properly formatted objects, just add them directly
             foreach ($result['items'] as $item) {
-                if (is_array($item)) {
-                    // Item is an array of values, map to column names
-                    $studentRow = [];
-                    foreach ($item as $index => $value) {
-                        if (isset($columnNames[$index])) {
-                            $studentRow[$columnNames[$index]] = $value;
-                        }
-                    }
-                    $studentsData[] = $studentRow;
-                } elseif (is_object($item) || is_array($item)) {
-                    // Item is already an object/array, convert keys to lowercase
-                    $studentRow = [];
-                    foreach ($item as $key => $value) {
-                        $studentRow[strtolower($key)] = $value;
-                    }
-                    $studentsData[] = $studentRow;
-                }
+                $studentsData[] = $item;
             }
         }
     }
@@ -258,29 +237,18 @@ class StudentController extends Controller
                 try {
                     // Map the JSON fields to our database columns
                     $mappedData = $this->mapJsonToDatabase($studentData);
-                        // Add this debugging for first few records:
-       // Add this debugging for first few records:
-        if ($lineNumber <= 2) {
-            \Log::info("Line $lineNumber mapping result:", [
-                'has_code' => isset($mappedData['apoL_a01_code']),
-                'has_nom' => isset($mappedData['apoL_a02_nom']),
-                'has_prenom' => isset($mappedData['apoL_a03_prenom']),
-                'code_value' => $mappedData['apoL_a01_code'] ?? 'MISSING',
-                'nom_value' => $mappedData['apoL_a02_nom'] ?? 'MISSING',
-                'prenom_value' => $mappedData['apoL_a03_prenom'] ?? 'MISSING'
-            ]);
-        }
+
                     // Validate required fields
-                if (!isset($mappedData['apoL_a01_code']) ||
-                        !isset($mappedData['apoL_a02_nom']) ||
-                        !isset($mappedData['apoL_a03_prenom'])) {
+                        if (!isset($mappedData['apoL_a01_code']) ||
+                            !isset($mappedData['apoL_a02_nom']) ||
+                            !isset($mappedData['apoL_a03_prenom'])) {
                         $errors[] = [
-                            'line' => $lineNumber,  // Use counter instead of index
+                            'line' => $lineNumber,
                             'code' => $mappedData['apoL_a01_code'] ?? 'N/A',
                             'message' => 'Champs requis manquants (Code étudiant, nom, prénom)',
                             'type' => 'validation'
                         ];
-                        $lineNumber++;  // Increment counter
+                        $lineNumber++;
                         continue;
                     }
 
@@ -318,8 +286,9 @@ class StudentController extends Controller
                         'type' => 'database'
                     ];
                 }
+                 $lineNumber++;
             }
-            $lineNumber++;
+
 
             DB::commit();
 
@@ -364,17 +333,17 @@ private function mapJsonToDatabase($studentData)
 {
     $mapped = [];
 
-    // Map student code - use lowercase field names from your JSON
+    // Map student code - your JSON uses 'cod_etu' directly
     if (isset($studentData['cod_etu'])) {
         $mapped['apoL_a01_code'] = (string) $studentData['cod_etu'];
     }
 
-    // Map last name - use lowercase
+    // Map last name - your JSON uses 'lib_nom_pat_ind' directly
     if (isset($studentData['lib_nom_pat_ind'])) {
         $mapped['apoL_a02_nom'] = $studentData['lib_nom_pat_ind'];
     }
 
-    // Map first name - use lowercase
+    // Map first name - your JSON uses 'lib_pr1_ind' directly
     if (isset($studentData['lib_pr1_ind'])) {
         $mapped['apoL_a03_prenom'] = $studentData['lib_pr1_ind'];
     }
@@ -384,7 +353,7 @@ private function mapJsonToDatabase($studentData)
         $mapped['apoL_a04_naissance'] = $this->formatDate($studentData['date_nai_ind']);
     }
 
-    // Map other fields using lowercase names
+    // Map other fields using the exact field names from your JSON
     $directMappings = [
         'cod_etu' => 'cod_etu',
         'cod_sex_etu' => 'cod_sex_etu',
