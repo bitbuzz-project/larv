@@ -86,7 +86,7 @@
         @if($student->cod_etp || $student->lib_etp)
         <div class="card stat-card mb-4">
             <div class="card-header bg-light">
-                <h5 class="mb-0">🎓 المعلومات الأكاديمية</h5>
+                <h5 class="mb-0">🎓 المعلومات الجامعية</h5>
             </div>
             <div class="card-body">
                 <div class="row">
@@ -104,7 +104,7 @@
                     @endif
                     @if($student->cod_anu)
                     <div class="col-md-6 mb-3">
-                        <strong>السنة الأكاديمية:</strong>
+                        <strong>السنة الجامعية:</strong>
                         <p class="text-muted">{{ $student->cod_anu }}</p>
                     </div>
                     @endif

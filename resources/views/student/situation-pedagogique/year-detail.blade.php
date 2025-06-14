@@ -1,12 +1,12 @@
 @extends('layouts.student')
 
-@section('title', 'تفاصيل السنة الأكاديمية')
+@section('title', 'تفاصيل السنة الجامعية')
 
 @section('content')
 <div class="container-fluid">
     <!-- Page Header -->
     <div class="d-flex justify-content-between align-items-center mb-4">
-        <h2>📅 تفاصيل السنة الأكاديمية {{ $year }}</h2>
+        <h2>📅 تفاصيل السنة الجامعية {{ $year }}</h2>
         <a href="{{ route('student.situation-pedagogique.index') }}" class="btn btn-secondary">
             ⬅️ العودة للوضعية البيداغوجية
         </a>
@@ -27,7 +27,7 @@
                                 <strong>رقم أبوجي:</strong> {{ $student->apoL_a01_code }}
                             </p>
                             <p class="mb-0">
-                                <strong>السنة الأكاديمية:</strong> {{ $year }}
+                                <strong>السنة الجامعية:</strong> {{ $year }}
                             </p>
                         </div>
                         <div class="col-md-4 text-center">
@@ -94,7 +94,7 @@
                         <div class="text-center py-5">
                             <i style="font-size: 3rem; color: #6c757d;">📚</i>
                             <h6 class="mt-3 text-muted">لا توجد مواد مسجلة</h6>
-                            <p class="text-muted">لم يتم تسجيل أي مواد لهذه السنة الأكاديمية</p>
+                            <p class="text-muted">لم يتم تسجيل أي مواد لهذه السنة الجامعية</p>
                         </div>
                     @else
                         @foreach($modulesBySemester as $semester => $semesterModules)

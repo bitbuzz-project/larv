@@ -29,7 +29,7 @@
                                 <strong>التخصص الحالي:</strong> {{ $stats['current_filiere'] }}
                             </p>
                             <p class="mb-0">
-                                <strong>السنة الأكاديمية:</strong> {{ $stats['current_year'] }}
+                                <strong>السنة الجامعية:</strong> {{ $stats['current_year'] }}
                             </p>
                         </div>
                         <div class="col-md-4 text-center">
@@ -89,7 +89,7 @@
         <div class="col-lg-6 mb-4">
             <div class="card stat-card">
                 <div class="card-header bg-light">
-                    <h5 class="mb-0">📋 تاريخ التسجيلات الأكاديمية</h5>
+                    <h5 class="mb-0">📋 تاريخ التسجيلات الجامعية</h5>
                 </div>
                 <div class="card-body">
                     @if($administratives->isEmpty())
@@ -103,7 +103,7 @@
                             <table class="table table-hover">
                                 <thead class="table-light">
                                     <tr>
-                                        <th>السنة الأكاديمية</th>
+                                        <th>السنة الجامعية</th>
                                         <th>التخصص</th>
                                         <th>الإجراءات</th>
                                     </tr>
@@ -112,14 +112,22 @@
                                     @foreach($administratives as $admin)
                                     <tr>
                                         <td>
-                                            <span class="badge bg-primary">{{ $admin->annee_scolaire }}</span>
+                                            @if($admin->annee_scolaire)
+                                                <span class="badge bg-primary">{{ $admin->annee_scolaire }}</span>
+                                            @else
+                                                <span class="badge bg-secondary">غير محدد</span>
+                                            @endif
                                         </td>
                                         <td>{{ $admin->formatted_filiere }}</td>
                                         <td>
-                                            <a href="{{ route('student.situation-pedagogique.year', $admin->annee_scolaire) }}"
-                                               class="btn btn-sm btn-outline-info">
-                                                👁️ التفاصيل
-                                            </a>
+                                            @if($admin->annee_scolaire)
+                                                <a href="{{ route('student.situation-pedagogique.year', $admin->annee_scolaire) }}"
+                                                   class="btn btn-sm btn-outline-info">
+                                                    👁️ التفاصيل
+                                                </a>
+                                            @else
+                                                <span class="text-muted small">لا توجد تفاصيل متاحة</span>
+                                            @endif
                                         </td>
                                     </tr>
                                     @endforeach
@@ -193,7 +201,7 @@
                             <p class="text-muted">{{ $currentAdministrative->formatted_filiere }}</p>
                         </div>
                         <div class="col-md-4 mb-3">
-                            <strong>السنة الأكاديمية:</strong>
+                            <strong>السنة الجامعية:</strong>
                             <p class="text-muted">{{ $currentAdministrative->annee_scolaire }}</p>
                         </div>
                         <div class="col-md-6 mb-3">
