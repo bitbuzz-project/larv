@@ -422,7 +422,7 @@ function validateJsonData(data) {
         }
 
         // Validate structure
-        const requiredFields = ['COD_ETU', 'LIB_NOM_PAT_IND', 'LIB_PR1_IND'];
+        const requiredFields = ['cod_etu', 'lib_nom_pat_ind', 'lib_pr1_ind'];
         const alternativeFields = ['COD_ETU_1', 'LIB_NOM_PAT_IND_1', 'LIB_PR1_IND_1'];
         const sampleSize = Math.min(5, studentsData.length);
 
