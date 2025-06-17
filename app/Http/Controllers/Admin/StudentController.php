@@ -378,34 +378,59 @@ private function mapJsonToDatabase($studentData)
     /**
      * Format date to consistent format
      */
-    private function formatDate($dateString)
-    {
-        if (empty($dateString)) {
-            return null;
-        }
-
-        try {
-            // Try to parse various date formats
-            $date = \DateTime::createFromFormat('d/m/Y', $dateString);
-            if (!$date) {
-                $date = \DateTime::createFromFormat('Y-m-d', $dateString);
-            }
-            if (!$date) {
-                $date = \DateTime::createFromFormat('d/m/y', $dateString);
-            }
-            if (!$date) {
-                $date = \DateTime::createFromFormat('Y-m-d H:i:s', $dateString);
-            }
-            if (!$date) {
-                // If parsing fails, return the original string
-                return $dateString;
-            }
-
-            return $date->format('d/m/Y');
-        } catch (\Exception $e) {
-            return $dateString; // Return original if formatting fails
-        }
+private function formatDate($dateString)
+{
+    if (empty($dateString)) {
+        return null;
     }
+
+    try {
+        // First, try to handle the common formats
+        $date = null;
+
+        // Try DD/MM/YY format first (most common issue)
+        if (preg_match('/^(\d{1,2})\/(\d{1,2})\/(\d{2})$/', $dateString, $matches)) {
+            $day = str_pad($matches[1], 2, '0', STR_PAD_LEFT);
+            $month = str_pad($matches[2], 2, '0', STR_PAD_LEFT);
+            $year = $matches[3];
+
+            // Convert 2-digit year to 4-digit year
+            // Assume years 00-30 are 2000-2030, and 31-99 are 1931-1999
+            if (intval($year) <= 30) {
+                $year = '20' . $year;
+            } else {
+                $year = '19' . $year;
+            }
+
+            return $day . '/' . $month . '/' . $year;
+        }
+
+        // Try other date formats
+        $formats = [
+            'd/m/Y',    // DD/MM/YYYY
+            'Y-m-d',    // YYYY-MM-DD
+            'd/m/y',    // DD/MM/YY (fallback)
+            'Y-m-d H:i:s' // YYYY-MM-DD HH:MM:SS
+        ];
+
+        foreach ($formats as $format) {
+            $date = \DateTime::createFromFormat($format, $dateString);
+            if ($date !== false) {
+                break;
+            }
+        }
+
+        if ($date === false || $date === null) {
+            // If all parsing fails, return the original string
+            return $dateString;
+        }
+
+        return $date->format('d/m/Y');
+
+    } catch (\Exception $e) {
+        return $dateString; // Return original if formatting fails
+    }
+}
 
     /**
      * Show import results
