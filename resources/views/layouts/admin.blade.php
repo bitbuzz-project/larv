@@ -150,6 +150,17 @@
                 <a href="#" class="btn btn-link text-start">
                     <i>📋</i> Gérer les résultats
                 </a>
+
+                    <div class="sidebar-section-title">Gestion des modules</div>
+            <a href="{{ route('admin.modules.index') }}" class="btn btn-link text-start {{ request()->routeIs('admin.modules.*') ? 'active' : '' }}">
+                <i>📚</i> Liste des modules
+            </a>
+            <a href="{{ route('admin.modules.create') }}" class="btn btn-link text-start">
+                <i>➕</i> Ajouter module
+            </a>
+            <a href="{{ route('admin.modules.import') }}" class="btn btn-link text-start {{ request()->routeIs('admin.modules.import*') ? 'active' : '' }}">
+                <i>📥</i> Importer JSON Modules
+            </a>
             </div>
 
             <div class="sidebar-section">

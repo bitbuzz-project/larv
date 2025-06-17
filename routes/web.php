@@ -7,6 +7,7 @@ use App\Http\Controllers\Students\DashboardController;
 use Illuminate\Support\Facades\Route;
 use App\Http\Controllers\Students\ProfileController;
 use App\Http\Controllers\Students\SituationPedagogiqueController;
+use App\Http\Controllers\Admin\ModuleController;
 
 /*
 |--------------------------------------------------------------------------
@@ -42,6 +43,18 @@ Route::middleware(['auth', 'admin'])->prefix('admin')->name('admin.')->group(fun
     Route::post('/students-import', [AdminStudentController::class, 'import'])->name('students.import');
     Route::get('/students-import-results', [AdminStudentController::class, 'importResults'])->name('students.import.results');
     Route::get('/students-export', [AdminStudentController::class, 'export'])->name('students.export');
+
+
+    // Module Management
+    Route::resource('modules', ModuleController::class);
+
+    // Module Import/Export routes
+    Route::get('/modules-import', [ModuleController::class, 'showImport'])->name('modules.import');
+    Route::post('/modules-import', [ModuleController::class, 'import'])->name('modules.import');
+    Route::get('/modules-import-results', [ModuleController::class, 'importResults'])->name('modules.import.results');
+
+
+
 });
 
 // Student Routes
