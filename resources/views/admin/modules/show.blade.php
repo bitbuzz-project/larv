@@ -46,7 +46,7 @@
                     @if($module->lib_elp_arb)
                     <div class="col-md-12 mb-3">
                         <strong>Libellé (Arabe):</strong><br>
-                        {{ $module->lib_elp_arb }}
+                        {{ $module->lib_elp_arb_fixed }}
                     </div>
                     @endif
                 </div>

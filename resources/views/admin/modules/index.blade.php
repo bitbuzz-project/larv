@@ -122,7 +122,7 @@
                                     <div>
                                         <strong>{{ Str::limit($module->lib_elp ?? 'Sans titre', 50) }}</strong>
                                         @if($module->lib_elp_arb)
-                                            <br><small class="text-muted">{{ Str::limit($module->lib_elp_arb, 40) }}</small>
+                                            <br><small class="text-muted">{{ Str::limit($module->lib_elp_arb_fixed, 40) }}</small>
                                         @endif
                                     </div>
                                 </td>

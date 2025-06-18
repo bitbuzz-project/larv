@@ -52,7 +52,7 @@
                         <label for="lib_elp_arb" class="form-label">Libellé (Arabe)</label>
                         <input type="text" class="form-control @error('lib_elp_arb') is-invalid @enderror"
                                id="lib_elp_arb" name="lib_elp_arb"
-                               value="{{ old('lib_elp_arb', $module->lib_elp_arb) }}">
+                               value="{{ old('lib_elp_arb_fixed', $module->lib_elp_arb_fixed) }}">
                         @error('lib_elp_arb')
                             <div class="invalid-feedback">{{ $message }}</div>
                         @enderror

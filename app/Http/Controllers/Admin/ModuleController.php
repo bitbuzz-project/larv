@@ -140,45 +140,46 @@ class ModuleController extends Controller
     /**
      * Handle JSON file import
      */
-    public function import(Request $request)
+   public function import(Request $request)
     {
         // Increase execution limits for large imports
         set_time_limit(300); // 5 minutes
         ini_set('memory_limit', '512M'); // 512MB memory
 
-        $request->validate([
-            'json_file' => [
-                'required',
-                'file',
-                'max:51200', // 50MB max
-                function ($attribute, $value, $fail) {
-                    if ($value) {
-                        $extension = strtolower($value->getClientOriginalExtension());
-                        $mimeType = $value->getClientMimeType();
-
-                        if ($extension !== 'json' && $mimeType !== 'application/json') {
-                            $fail('Le fichier doit être un fichier JSON valide.');
-                            return;
-                        }
-
-                        $content = file_get_contents($value->getPathname());
-                        $data = json_decode($content, true);
-
-                        if (json_last_error() !== JSON_ERROR_NONE) {
-                            $fail('Le fichier JSON est invalide.');
-                        }
-                    }
-                },
-            ],
-        ]);
-
         try {
+            // Laravel's default handling of ValidationException for AJAX requests should return JSON 422
+            $request->validate([
+                'json_file' => [
+                    'required',
+                    'file',
+                    'max:51200', // 50MB max
+                    function ($attribute, $value, $fail) {
+                        if ($value) {
+                            $extension = strtolower($value->getClientOriginalExtension());
+                            $mimeType = $value->getClientMimeType();
+
+                            if ($extension !== 'json' && $mimeType !== 'application/json') {
+                                $fail('Le fichier doit être un fichier JSON valide.');
+                                return;
+                            }
+
+                            $content = file_get_contents($value->getPathname());
+                            $data = json_decode($content, true);
+
+                            if (json_last_error() !== JSON_ERROR_NONE) {
+                                $fail('Le fichier JSON est invalide.');
+                            }
+                        }
+                    },
+                ],
+            ]);
+
             $file = $request->file('json_file');
             $jsonContent = file_get_contents($file->getPathname());
             $jsonData = json_decode($jsonContent, true);
 
             if (json_last_error() !== JSON_ERROR_NONE) {
-                return back()->with('error', 'Le fichier JSON est invalide.');
+                return response()->json(['message' => 'Le fichier JSON est invalide.', 'errors' => ['json_file' => ['Le fichier JSON est invalide.']]], 400);
             }
 
             $modulesData = [];
@@ -210,15 +211,15 @@ class ModuleController extends Controller
             } elseif (is_array($jsonData)) {
                 $modulesData = $jsonData;
             } else {
-                return back()->with('error', 'Format JSON non reconnu.');
+                return response()->json(['message' => 'Format JSON non reconnu.', 'errors' => ['json_file' => ['Format JSON non reconnu.']]], 400);
             }
 
             if (empty($modulesData)) {
-                return back()->with('error', 'Aucune donnée de module trouvée dans le fichier.');
+                return response()->json(['message' => 'Aucune donnée de module trouvée dans le fichier.', 'errors' => ['json_file' => ['Aucune donnée de module trouvée.']]], 400);
             }
 
             if (count($modulesData) > 10000) {
-                return back()->with('error', 'Le fichier ne peut pas contenir plus de 10000 modules à la fois.');
+                return response()->json(['message' => 'Le fichier ne peut pas contenir plus de 10000 modules à la fois.', 'errors' => ['json_file' => ['Limite de 10000 modules dépassée.']]], 400);
             }
 
             $imported = 0;
@@ -233,17 +234,30 @@ class ModuleController extends Controller
                     // Map the JSON fields to our database columns
                     $mappedData = $this->mapJsonToDatabase($moduleData);
 
-                    // Validate required fields
+                    // Note: Client-side JS now filters empty cod_elp.
+                    // This server-side check mainly catches non-object entries or
+                    // cases where client-side filtering might be bypassed.
                     if (!isset($mappedData['cod_elp']) || empty($mappedData['cod_elp'])) {
                         $errors[] = [
                             'line' => $lineNumber,
                             'code' => 'N/A',
-                            'message' => 'Code module manquant (cod_elp)',
+                            'message' => 'Code module manquant (cod_elp) au serveur. Vérifiez votre fichier source.',
                             'type' => 'validation'
                         ];
                         $lineNumber++;
                         continue;
                     }
+                    if (!isset($mappedData['lib_elp']) || empty($mappedData['lib_elp'])) {
+                        $errors[] = [
+                            'line' => $lineNumber,
+                            'code' => $mappedData['cod_elp'] ?? 'N/A',
+                            'message' => 'Libellé module (lib_elp) manquant au serveur. Vérifiez votre fichier source.',
+                            'type' => 'validation'
+                        ];
+                        $lineNumber++;
+                        continue;
+                    }
+
 
                     // Check if module already exists
                     if (Module::where('cod_elp', $mappedData['cod_elp'])->exists()) {
@@ -257,6 +271,7 @@ class ModuleController extends Controller
                     $imported++;
 
                 } catch (\Exception $e) {
+                    // Catch any database or other specific errors during module creation
                     $errors[] = [
                         'line' => $lineNumber,
                         'code' => $mappedData['cod_elp'] ?? 'N/A',
@@ -275,7 +290,7 @@ class ModuleController extends Controller
                     'imported' => $imported,
                     'skipped' => $skipped,
                     'errors' => count($errors),
-                    'total' => count($modulesData),
+                    'total' => count($modulesData), // Total from file, before server-side skips/errors
                     'success_rate' => count($modulesData) > 0 ? ($imported / count($modulesData)) * 100 : 0
                 ],
                 'import_errors' => $errors
@@ -289,27 +304,38 @@ class ModuleController extends Controller
                 if (count($errors) > 0) {
                     $message .= ", " . count($errors) . " erreurs";
                 }
-
-                return redirect()->route('admin.modules.import.results')->with('success', $message);
+                // Return JSON response for success, indicating redirect target
+                return response()->json(['message' => $message, 'redirect' => route('admin.modules.import.results')], 200);
             } else {
-                return back()->with('error', 'Aucun module n\'a pu être importé. Vérifiez les erreurs.');
+                // If no modules were imported successfully, return a structured error
+                $errorMessage = 'Aucun module n\'a pu être importé. Vérifiez les erreurs.';
+                if (count($errors) > 0) {
+                    $errorMessage .= ' Détails: ' . implode('; ', array_map(function($e){ return $e['message']; }, $errors));
+                }
+                return response()->json(['message' => $errorMessage, 'errors' => $errors], 400);
             }
 
+        } catch (ValidationException $e) {
+            // This catches validation errors defined by $request->validate()
+            // Laravel's default handler for AJAX will return JSON 422 automatically,
+            // so we can just re-throw or let it handle.
+            throw $e;
         } catch (\Exception $e) {
             DB::rollback();
-            Log::error('Module import error: ' . $e->getMessage());
-            return back()->with('error', 'Erreur lors de l\'import: ' . $e->getMessage());
+            Log::error('Module import error: ' . $e->getMessage() . ' in ' . $e->getFile() . ' on line ' . $e->getLine());
+            // Return JSON response for general server errors
+            return response()->json(['message' => 'Erreur serveur lors de l\'importation: ' . $e->getMessage(), 'errors' => ['general' => [$e->getMessage()]]], 500);
         }
     }
 
     /**
      * Map JSON fields to database columns
      */
-    private function mapJsonToDatabase($moduleData)
+private function mapJsonToDatabase($moduleData)
     {
         $mapped = [];
 
-        // Direct mapping for all fields (convert to lowercase)
+        // Define all possible field mappings from JSON to database columns
         $fieldMappings = [
             'cod_elp', 'cod_cmp', 'cod_nel', 'cod_pel', 'lib_elp', 'lic_elp', 'lib_cmt_elp',
             'dat_cre_elp', 'dat_mod_elp', 'dat_deb_ope_ipe', 'dat_fin_ope_ipe',
@@ -317,14 +343,14 @@ class ModuleController extends Controller
             'nbr_adm_elp', 'nbr_adm_fra', 'nbr_adm_etr',
             'not_obt_elp_num', 'not_obt_elp_den', 'not_min_rpt_elp_num', 'not_min_rpt_elp_den',
             'not_min_adm_num', 'not_min_adm_den', 'not_max_adm_num', 'not_max_adm_den',
-            'tem_elp_cap', 'tem_rei_ipe_acq', 'tem_sus_elp', 'lib_sus_elp', 'tem_rel_pos_syt',
+            'tem_elp_cap', 'tem_rei_ipe_acq', 'tem_sus_elp', 'tem_rel_pos_syt',
             'tem_sca_elp', 'tem_elp_prm_niv', 'tem_not_elp', 'bar_sai_elp', 'tem_pnt_jur_elp',
             'tem_mnd_elp', 'cod_cfm', 'tem_res_elp', 'tem_jur_elp', 'tem_ctl_val_cad_elp',
             'tem_anl_rpt_elp', 'not_min_rpt_elp', 'bar_min_rpt_elp', 'tem_con_elp', 'dur_con_elp',
             'not_min_con_elp', 'bar_min_con_elp', 'tem_cap_elp', 'tem_ses_uni', 'tem_adi', 'tem_ado',
             'tem_heu_ens_elp', 'cod_scc', 'nbr_eff_prv_elp', 'nbr_heu_cm_elp', 'nbr_heu_td_elp',
             'nbr_heu_tp_elp', 'tem_mcc_elp', 'tem_rpt_dsc_elp', 'cod_pan_1', 'cod_pan_2',
-            'cod_pan_3', 'cod_pan_4', 'lib_elp_arb', 'lic_elp_arb', 'lib_elp_arb_fixed'
+            'cod_pan_3', 'cod_pan_4', 'lic_elp_arb' // Removed 'lib_elp_arb' and 'lib_elp_arb_fixed' from this list as they are handled below
         ];
 
         foreach ($fieldMappings as $field) {
@@ -333,6 +359,28 @@ class ModuleController extends Controller
                 $mapped[$field] = $moduleData[$lowerField];
             }
         }
+
+        // --- Custom logic for lib_elp_arb ---
+        // Prioritize 'lib_elp_arb_fixed', then fall back to 'lib_elp_arb'
+        if (isset($moduleData['lib_elp_arb_fixed'])) {
+            $mapped['lib_elp_arb'] = $moduleData['lib_elp_arb_fixed'];
+        } elseif (isset($moduleData['lib_elp_arb'])) {
+            $mapped['lib_elp_arb'] = $moduleData['lib_elp_arb'];
+        } else {
+            $mapped['lib_elp_arb'] = null; // Ensure it's explicitly null if neither is present
+        }
+        // --- End custom logic ---
+
+        // Ensure lib_elp_arb_fixed also gets mapped if it exists and is needed as a separate column
+        // If 'lib_elp_arb_fixed' is a separate column in your DB, keep this.
+        // If 'lib_elp_arb_fixed' in DB should strictly come from JSON 'lib_elp_arb_fixed', add it back.
+        // For example, if you have a DB column named `lib_elp_arb_fixed`:
+        if (isset($moduleData['lib_elp_arb_fixed'])) {
+            $mapped['lib_elp_arb_fixed'] = $moduleData['lib_elp_arb_fixed'];
+        } else {
+            $mapped['lib_elp_arb_fixed'] = null; // Ensure it's explicitly null if not present
+        }
+
 
         return $mapped;
     }
