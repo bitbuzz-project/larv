@@ -57,6 +57,8 @@ Route::middleware(['auth', 'admin'])->prefix('admin')->name('admin.')->group(fun
     Route::get('/student-modules-import', [StudentModuleController::class, 'showImport'])->name('student-modules.import'); // Add this line
     Route::post('/student-modules-import', [StudentModuleController::class, 'import'])->name('student-modules.import'); // Add this line
     Route::get('/student-modules-import-results', [StudentModuleController::class, 'importResults'])->name('student-modules.import.results'); // Add this line
+    Route::get('/admin/student-modules/process-chunk/{importId}', [StudentModuleController::class, 'processChunk'])
+    ->name('admin.student-modules.process-chunk');
 
 
 });

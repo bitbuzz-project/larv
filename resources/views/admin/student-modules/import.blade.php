@@ -24,16 +24,87 @@
                         <div class="text-danger mt-2">{{ $message }}</div>
                     @enderror
                 </div>
-                <button type="submit" class="btn btn-danger">Importer les modules</button>
+
+                <div class="mb-3">
+                    <label for="chunk_size" class="form-label">Taille des chunks (optionnel):</label>
+                    <select class="form-control" id="chunk_size" name="chunk_size">
+                        <option value="50">50 enregistrements par chunk (recommandé pour gros fichiers)</option>
+                        <option value="100" selected>100 enregistrements par chunk (défaut)</option>
+                        <option value="200">200 enregistrements par chunk</option>
+                        <option value="500">500 enregistrements par chunk (pour petits fichiers)</option>
+                    </select>
+                    <small class="form-text text-muted">Pour les très gros fichiers, utilisez une taille plus petite pour éviter les timeouts.</small>
+                </div>
+
+                <button type="submit" class="btn btn-danger" id="submitBtn">Importer les modules</button>
             </form>
 
+            <!-- Progress Section -->
+            <div id="progressSection" class="mt-4" style="display:none;">
+                <div class="card">
+                    <div class="card-header">
+                        <h5 class="card-title mb-0">Progression de l'importation</h5>
+                    </div>
+                    <div class="card-body">
+                        <div class="progress mb-3" style="height: 25px;">
+                            <div id="progressBar" class="progress-bar progress-bar-striped progress-bar-animated"
+                                 role="progressbar" style="width: 0%" aria-valuenow="0" aria-valuemin="0" aria-valuemax="100">
+                                0%
+                            </div>
+                        </div>
+
+                        <div class="row">
+                            <div class="col-md-3">
+                                <div class="card bg-light">
+                                    <div class="card-body text-center">
+                                        <h5 class="card-title">Total</h5>
+                                        <p class="card-text h4" id="totalRecords">0</p>
+                                    </div>
+                                </div>
+                            </div>
+                            <div class="col-md-3">
+                                <div class="card bg-success text-white">
+                                    <div class="card-body text-center">
+                                        <h5 class="card-title">Importés</h5>
+                                        <p class="card-text h4" id="importedRecords">0</p>
+                                    </div>
+                                </div>
+                            </div>
+                            <div class="col-md-3">
+                                <div class="card bg-warning text-white">
+                                    <div class="card-body text-center">
+                                        <h5 class="card-title">Ignorés</h5>
+                                        <p class="card-text h4" id="skippedRecords">0</p>
+                                    </div>
+                                </div>
+                            </div>
+                            <div class="col-md-3">
+                                <div class="card bg-danger text-white">
+                                    <div class="card-body text-center">
+                                        <h5 class="card-title">Erreurs</h5>
+                                        <p class="card-text h4" id="errorRecords">0</p>
+                                    </div>
+                                </div>
+                            </div>
+                        </div>
+
+                        <div class="mt-3">
+                            <p class="mb-1">Traitement en cours... <span id="processedRecords">0</span> / <span id="totalRecordsText">0</span></p>
+                            <p class="mb-0 text-muted">Veuillez ne pas fermer cette page pendant l'importation.</p>
+                        </div>
+                    </div>
+                </div>
+            </div>
+
+            <!-- Loading Indicator -->
             <div id="loadingIndicator" class="mt-3" style="display:none;">
                 <div class="spinner-border text-danger" role="status">
                     <span class="visually-hidden">Chargement...</span>
                 </div>
-                <span class="ms-2">Importation en cours, cela peut prendre un certain temps pour les gros fichiers...</span>
+                <span class="ms-2">Initialisation de l'importation...</span>
             </div>
 
+            <!-- Error Messages -->
             <div id="errorMessages" class="mt-3" style="display:none;">
                 <div class="alert alert-danger" role="alert">
                     <h4 class="alert-heading">Erreurs d'importation:</h4>
@@ -45,21 +116,30 @@
 </div>
 
 <script>
+    let importInProgress = false;
+    let continueUrl = null;
+
     document.getElementById('importForm').addEventListener('submit', function(e) {
         e.preventDefault();
+
+        if (importInProgress) {
+            return;
+        }
 
         const form = e.target;
         const formData = new FormData(form);
         const loadingIndicator = document.getElementById('loadingIndicator');
         const errorMessagesDiv = document.getElementById('errorMessages');
-        const errorList = document.getElementById('errorList');
+        const progressSection = document.getElementById('progressSection');
+        const submitBtn = document.getElementById('submitBtn');
 
-        // Reset previous messages
-        errorMessagesDiv.style.display = 'none';
-        errorList.innerHTML = '';
+        // Reset UI
+        resetUI();
         loadingIndicator.style.display = 'block';
-        form.querySelector('button[type="submit"]').setAttribute('disabled', 'disabled');
+        submitBtn.disabled = true;
+        importInProgress = true;
 
+        // Start import
         fetch(form.action, {
             method: 'POST',
             body: formData,
@@ -67,66 +147,155 @@
                 'X-CSRF-TOKEN': document.querySelector('meta[name="csrf-token"]').getAttribute('content')
             }
         })
-        .then(response => {
-            // Always try to parse JSON, even if response is not ok
-            return response.json().then(data => {
-                if (!response.ok) {
-                    // If response is not OK, reject the promise with the parsed data and status
-                    return Promise.reject({ status: response.status, data: data });
-                }
-                return data;
-            }).catch(() => {
-                // If parsing JSON fails for a non-OK response, return a generic error
-                return Promise.reject({ status: response.status, data: { message: 'Réponse du serveur non valide ou vide.' } });
-            });
-        })
+        .then(response => response.json())
         .then(data => {
             loadingIndicator.style.display = 'none';
-            form.querySelector('button[type="submit"]').removeAttribute('disabled');
-            if (data.redirect) {
-                window.location.href = data.redirect;
+
+            if (data.status === 'processing') {
+                progressSection.style.display = 'block';
+                continueUrl = data.continue_url;
+                updateProgress(data);
+                continueImport();
+            } else if (data.status === 'completed') {
+                handleImportComplete(data);
             } else {
-                // Fallback for success, should redirect to results page
-                alert(data.message || 'Importation terminée avec succès.');
+                handleError(data);
             }
         })
         .catch(error => {
             console.error('Error:', error);
             loadingIndicator.style.display = 'none';
-            form.querySelector('button[type="submit"]').removeAttribute('disabled');
+            handleError({ message: 'Erreur de connexion au serveur.' });
+        });
+    });
 
-            errorMessagesDiv.style.display = 'block';
-            let displayMessage = 'Une erreur inattendue est survenue lors de l\'importation.';
+    function continueImport() {
+        if (!continueUrl || !importInProgress) {
+            return;
+        }
 
-            if (error.data && error.data.message) {
-                displayMessage = error.data.message;
+        fetch(continueUrl, {
+            method: 'GET',
+            headers: {
+                'X-CSRF-TOKEN': document.querySelector('meta[name="csrf-token"]').getAttribute('content')
             }
+        })
+        .then(response => response.json())
+        .then(data => {
+            if (data.status === 'processing') {
+                updateProgress(data);
+                // Continue processing after a short delay
+                setTimeout(continueImport, 1000);
+            } else if (data.status === 'completed') {
+                handleImportComplete(data);
+            } else {
+                handleError(data);
+            }
+        })
+        .catch(error => {
+            console.error('Error:', error);
+            handleError({ message: 'Erreur lors du traitement.' });
+        });
+    }
 
-            if (error.data && error.data.errors) {
-                if (Array.isArray(error.data.errors)) {
-                    // Handle custom error array from controller (e.g., validation errors with line/code)
-                    error.data.errors.forEach(err => {
+    function updateProgress(data) {
+        const progress = Math.round(data.progress || 0);
+        const progressBar = document.getElementById('progressBar');
+
+        progressBar.style.width = progress + '%';
+        progressBar.setAttribute('aria-valuenow', progress);
+        progressBar.textContent = progress + '%';
+
+        document.getElementById('totalRecords').textContent = data.total || 0;
+        document.getElementById('totalRecordsText').textContent = data.total || 0;
+        document.getElementById('processedRecords').textContent = data.processed || 0;
+        document.getElementById('importedRecords').textContent = data.imported || 0;
+        document.getElementById('skippedRecords').textContent = data.skipped || 0;
+        document.getElementById('errorRecords').textContent = data.errors || 0;
+    }
+
+    function handleImportComplete(data) {
+        importInProgress = false;
+
+        // Update final progress
+        updateProgress({
+            progress: 100,
+            total: data.stats.total,
+            processed: data.stats.total,
+            imported: data.stats.imported,
+            skipped: data.stats.skipped,
+            errors: data.stats.errors
+        });
+
+        // Update progress bar to success
+        const progressBar = document.getElementById('progressBar');
+        progressBar.classList.remove('progress-bar-animated', 'progress-bar-striped');
+        progressBar.classList.add('bg-success');
+
+        // Show success message and redirect
+        setTimeout(() => {
+            if (data.redirect) {
+                window.location.href = data.redirect;
+            } else {
+                alert('Importation terminée avec succès!');
+                resetForm();
+            }
+        }, 2000);
+    }
+
+    function handleError(data) {
+        importInProgress = false;
+        const errorMessagesDiv = document.getElementById('errorMessages');
+        const errorList = document.getElementById('errorList');
+
+        errorMessagesDiv.style.display = 'block';
+        errorList.innerHTML = '';
+
+        let displayMessage = data.message || 'Une erreur inattendue est survenue.';
+
+        if (data.errors) {
+            if (Array.isArray(data.errors)) {
+                data.errors.forEach(err => {
+                    const li = document.createElement('li');
+                    li.textContent = `Ligne ${err.line || 'N/A'}: Code ${err.code || 'N/A'} - ${err.message}`;
+                    errorList.appendChild(li);
+                });
+            } else {
+                for (const key in data.errors) {
+                    data.errors[key].forEach(message => {
                         const li = document.createElement('li');
-                        li.textContent = `Ligne ${err.line || 'N/A'}: Code ${err.code || 'N/A'} - ${err.message}`;
+                        li.textContent = message;
                         errorList.appendChild(li);
                     });
-                } else {
-                    // Handle Laravel's default validation errors (object of arrays)
-                    for (const key in error.data.errors) {
-                        error.data.errors[key].forEach(message => {
-                            const li = document.createElement('li');
-                            li.textContent = message;
-                            errorList.appendChild(li);
-                        });
-                    }
                 }
-            } else {
-                // For general errors or if 'errors' array is not present, add the main message
-                const li = document.createElement('li');
-                li.textContent = displayMessage;
-                errorList.appendChild(li);
             }
-        });
+        } else {
+            const li = document.createElement('li');
+            li.textContent = displayMessage;
+            errorList.appendChild(li);
+        }
+
+        resetForm();
+    }
+
+    function resetUI() {
+        document.getElementById('errorMessages').style.display = 'none';
+        document.getElementById('progressSection').style.display = 'none';
+        document.getElementById('errorList').innerHTML = '';
+    }
+
+    function resetForm() {
+        document.getElementById('submitBtn').disabled = false;
+        importInProgress = false;
+        continueUrl = null;
+    }
+
+    // Prevent page unload during import
+    window.addEventListener('beforeunload', function(e) {
+        if (importInProgress) {
+            e.preventDefault();
+            e.returnValue = 'Une importation est en cours. Êtes-vous sûr de vouloir quitter cette page?';
+        }
     });
 </script>
 @endsection
