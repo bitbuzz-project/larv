@@ -8,6 +8,7 @@ use Illuminate\Support\Facades\Route;
 use App\Http\Controllers\Students\ProfileController;
 use App\Http\Controllers\Students\SituationPedagogiqueController;
 use App\Http\Controllers\Admin\ModuleController;
+use App\Http\Controllers\Admin\StudentModuleController; // Add this line
 
 /*
 |--------------------------------------------------------------------------
@@ -52,7 +53,10 @@ Route::middleware(['auth', 'admin'])->prefix('admin')->name('admin.')->group(fun
     Route::get('/modules-import', [ModuleController::class, 'showImport'])->name('modules.import');
     Route::post('/modules-import', [ModuleController::class, 'import'])->name('modules.import');
     Route::get('/modules-import-results', [ModuleController::class, 'importResults'])->name('modules.import.results');
-
+    // Student Module Import/Export routes (NEW)
+    Route::get('/student-modules-import', [StudentModuleController::class, 'showImport'])->name('student-modules.import'); // Add this line
+    Route::post('/student-modules-import', [StudentModuleController::class, 'import'])->name('student-modules.import'); // Add this line
+    Route::get('/student-modules-import-results', [StudentModuleController::class, 'importResults'])->name('student-modules.import.results'); // Add this line
 
 
 });

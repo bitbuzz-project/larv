@@ -110,21 +110,17 @@
 </head>
 <body>
 <div class="wrapper">
-    <!-- Admin Sidebar -->
     <div class="sidebar" id="sidebar">
         <button class="close-sidebar" id="closeSidebar">&times;</button>
 
-        <!-- Admin Logo/Header -->
         <div class="px-3 text-center py-3">
             <h5 class="mb-0">Admin Panel</h5>
         </div>
 
-        <!-- Admin Badge -->
         <div class="admin-badge">
             🛡️ ADMINISTRATEUR
         </div>
 
-        <!-- Admin Info Card -->
         <div class="card mx-3 mb-3" style="background: rgba(255, 255, 255, 0.1); border: none;">
             <div class="card-body text-center py-2">
                 <h6 class="text-white mb-1">{{ auth()->user()->apoL_a03_prenom }} {{ auth()->user()->apoL_a02_nom }}</h6>
@@ -132,7 +128,6 @@
             </div>
         </div>
 
-        <!-- Navigation Links -->
         <div class="d-grid gap-1 px-2">
             <a href="{{ route('admin.dashboard') }}" class="btn btn-link text-start {{ request()->routeIs('admin.dashboard') ? 'active' : '' }}">
                 <i>📊</i> Tableau de bord
@@ -146,9 +141,9 @@
                 <a href="{{ route('admin.students.create') }}" class="btn btn-link text-start">
                     <i>➕</i> Ajouter étudiant
                 </a>
-                <a href="#" class="btn btn-link text-start">
-                    <i>📥</i> Importer JSON
-                </a>
+                <a href="{{ route('admin.student-modules.import') }}" class="btn btn-link text-start {{ request()->routeIs('admin.student-modules.import*') ? 'active' : '' }}"> {{-- NEW LINE --}}
+                    <i>📥</i> Importer JSON Modules Étudiants {{-- NEW LINE --}}
+                </a> {{-- NEW LINE --}}
                 <a href="#" class="btn btn-link text-start">
                     <i>📋</i> Gérer les résultats
                 </a>
@@ -196,7 +191,6 @@
             </div>
         </div>
 
-        <!-- Logout Button -->
         <div class="px-3 mt-4">
             <form method="POST" action="{{ route('logout') }}">
                 @csrf
@@ -207,9 +201,7 @@
         </div>
     </div>
 
-    <!-- Content -->
     <div class="content">
-        <!-- Navbar for mobile -->
         <nav class="navbar navbar-dark bg-danger d-md-none">
             <div class="container-fluid">
                 <button class="btn btn-outline-light" id="toggleSidebar">☰ Menu Admin</button>
@@ -217,7 +209,6 @@
             </div>
         </nav>
 
-        <!-- Success/Error Messages -->
         @if(session('success'))
             <div class="alert alert-success alert-dismissible fade show">
                 {{ session('success') }}
