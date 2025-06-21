@@ -143,28 +143,29 @@
                 </a>
 
                 <div class="sidebar-section">
-    <div class="sidebar-section-title">Gestion des notes</div>
-    <a href="{{ route('admin.notes.import') }}" class="btn btn-link text-start {{ request()->routeIs('admin.notes.*') ? 'active' : '' }}">
-        <i>📊</i> Importer Notes (ODS)
-    </a>
-</div>
-                <a href="{{ route('admin.student-modules.import') }}" class="btn btn-link text-start {{ request()->routeIs('admin.student-modules.import*') ? 'active' : '' }}"> {{-- NEW LINE --}}
-                    <i>📥</i> Importer JSON Modules Étudiants {{-- NEW LINE --}}
-                </a> {{-- NEW LINE --}}
+                    <div class="sidebar-section-title">Gestion des notes</div>
+                    <a href="{{ route('admin.notes.import') }}" class="btn btn-link text-start {{ request()->routeIs('admin.notes.*') ? 'active' : '' }}">
+                        <i>📊</i> Importer Notes (ODS)
+                    </a>
+                </div>
+
+                <a href="{{ route('admin.student-modules.import') }}" class="btn btn-link text-start {{ request()->routeIs('admin.student-modules.import*') ? 'active' : '' }}">
+                    <i>📥</i> Importer JSON Modules Étudiants
+                </a>
                 <a href="#" class="btn btn-link text-start">
                     <i>📋</i> Gérer les résultats
                 </a>
 
-                    <div class="sidebar-section-title">Gestion des modules</div>
-            <a href="{{ route('admin.modules.index') }}" class="btn btn-link text-start {{ request()->routeIs('admin.modules.*') ? 'active' : '' }}">
-                <i>📚</i> Liste des modules
-            </a>
-            <a href="{{ route('admin.modules.create') }}" class="btn btn-link text-start">
-                <i>➕</i> Ajouter module
-            </a>
-            <a href="{{ route('admin.modules.import') }}" class="btn btn-link text-start {{ request()->routeIs('admin.modules.import*') ? 'active' : '' }}">
-                <i>📥</i> Importer JSON Modules
-            </a>
+                <div class="sidebar-section-title">Gestion des modules</div>
+                <a href="{{ route('admin.modules.index') }}" class="btn btn-link text-start {{ request()->routeIs('admin.modules.*') ? 'active' : '' }}">
+                    <i>📚</i> Liste des modules
+                </a>
+                <a href="{{ route('admin.modules.create') }}" class="btn btn-link text-start">
+                    <i>➕</i> Ajouter module
+                </a>
+                <a href="{{ route('admin.modules.import') }}" class="btn btn-link text-start {{ request()->routeIs('admin.modules.import*') ? 'active' : '' }}">
+                    <i>📥</i> Importer JSON Modules
+                </a>
             </div>
 
             <div class="sidebar-section">
@@ -179,11 +180,14 @@
 
             <div class="sidebar-section">
                 <div class="sidebar-section-title">Rapports & Statistiques</div>
-                <a href="#" class="btn btn-link text-start">
-                    <i>📈</i> Rapports
+                <a href="{{ route('admin.reports.index') }}" class="btn btn-link text-start {{ request()->routeIs('admin.reports.*') ? 'active' : '' }}">
+                    <i>📈</i> Rapports Détaillés
                 </a>
-                <a href="#" class="btn btn-link text-start">
-                    <i>📊</i> Statistiques
+                <a href="{{ route('admin.reports.index') }}" class="btn btn-link text-start">
+                    <i>📊</i> Statistiques Avancées
+                </a>
+                <a href="{{ route('admin.reports.export-pdf') }}" class="btn btn-link text-start">
+                    <i>📄</i> Exporter PDF
                 </a>
             </div>
 

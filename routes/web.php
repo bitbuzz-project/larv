@@ -11,6 +11,7 @@ use App\Http\Controllers\Admin\ModuleController;
 use App\Http\Controllers\Admin\StudentModuleController; // Add this line
 use App\Http\Controllers\Admin\NoteController;
 use App\Http\Controllers\Students\StudentsNoteController;
+use App\Http\Controllers\Admin\ReportController; // ADD THIS LINE
 
 
 /*
@@ -66,6 +67,10 @@ Route::middleware(['auth', 'admin'])->prefix('admin')->name('admin.')->group(fun
     Route::get('/student-modules-import-results', [StudentModuleController::class, 'importResults'])->name('student-modules.import.results'); // Add this line
     Route::get('/admin/student-modules/process-chunk/{importId}', [App\Http\Controllers\Admin\StudentModuleController::class, 'processChunk'])
         ->name('admin.student-modules.process-chunk');
+     // Reports and Analytics Routes (ADD THESE LINES)
+    Route::get('/reports', [ReportController::class, 'index'])->name('reports.index');
+    Route::get('/reports/export-pdf', [ReportController::class, 'exportPdf'])->name('reports.export-pdf');
+    Route::get('/reports/detail/{area}', [ReportController::class, 'detailAnalytics'])->name('reports.detail');
 
 
 });

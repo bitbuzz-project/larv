@@ -83,7 +83,7 @@
                         </a>
                     </div>
                     <div class="col-md-3 mb-2">
-                        <a href="#" class="btn btn-outline-info btn-block w-100">
+                        <a href="{{ route('admin.reports.index') }}" class="btn btn-outline-info btn-block w-100">
                             <i>📈</i> Voir Rapports
                         </a>
                     </div>
@@ -151,7 +151,10 @@
                 <div class="mt-3">
                     <h6>Actions Système</h6>
                     <div class="d-grid gap-2">
-                        <button class="btn btn-outline-secondary btn-sm">
+                        <a href="{{ route('admin.reports.index') }}" class="btn btn-outline-primary btn-sm">
+                            <i>📊</i> Voir rapports détaillés
+                        </a>
+                        <button class="btn btn-outline-secondary btn-sm" onclick="location.reload()">
                             <i>🔄</i> Actualiser les données
                         </button>
                         <button class="btn btn-outline-warning btn-sm">
