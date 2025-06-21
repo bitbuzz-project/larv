@@ -28,12 +28,12 @@
                 <div class="mb-3">
                     <label for="chunk_size" class="form-label">Taille des chunks (optionnel):</label>
                     <select class="form-control" id="chunk_size" name="chunk_size">
-                        <option value="50">50 enregistrements par chunk (recommandé pour gros fichiers)</option>
-                        <option value="100" selected>100 enregistrements par chunk (défaut)</option>
-                        <option value="200">200 enregistrements par chunk</option>
-                        <option value="500">500 enregistrements par chunk (pour petits fichiers)</option>
+                        <option value="25">25 enregistrements par chunk (pour très gros fichiers)</option>
+                        <option value="50" selected>50 enregistrements par chunk (recommandé)</option>
+                        <option value="100">100 enregistrements par chunk</option>
+                        <option value="200">200 enregistrements par chunk (pour petits fichiers)</option>
                     </select>
-                    <small class="form-text text-muted">Pour les très gros fichiers, utilisez une taille plus petite pour éviter les timeouts.</small>
+                    <small class="form-text text-muted">Pour les très gros fichiers (90k+ enregistrements), utilisez 25-50 pour éviter les timeouts.</small>
                 </div>
 
                 <button type="submit" class="btn btn-danger" id="submitBtn">Importer les modules</button>
@@ -118,6 +118,8 @@
 <script>
     let importInProgress = false;
     let continueUrl = null;
+    let retryCount = 0;
+    let maxRetries = 3;
 
     document.getElementById('importForm').addEventListener('submit', function(e) {
         e.preventDefault();
@@ -138,24 +140,44 @@
         loadingIndicator.style.display = 'block';
         submitBtn.disabled = true;
         importInProgress = true;
+        retryCount = 0;
 
         // Start import
         fetch(form.action, {
             method: 'POST',
             body: formData,
             headers: {
-                'X-CSRF-TOKEN': document.querySelector('meta[name="csrf-token"]').getAttribute('content')
+                'X-CSRF-TOKEN': document.querySelector('meta[name="csrf-token"]').getAttribute('content'),
+                'X-Requested-With': 'XMLHttpRequest'
             }
         })
-        .then(response => response.json())
+        .then(response => {
+            if (!response.ok) {
+                throw new Error(`HTTP ${response.status}: ${response.statusText}`);
+            }
+            return response.json();
+        })
         .then(data => {
+            console.log('Initial response:', data);
             loadingIndicator.style.display = 'none';
 
             if (data.status === 'processing') {
                 progressSection.style.display = 'block';
-                continueUrl = data.continue_url;
+
+                // Build continue URL more reliably
+                if (data.continue_url) {
+                    continueUrl = data.continue_url;
+                } else if (data.import_id) {
+                    // Fallback: construct URL manually
+                    continueUrl = window.location.origin + '/admin/student-modules-import/process-chunk/' + data.import_id;
+                } else {
+                    handleError({ message: 'URL de continuation manquante dans la réponse du serveur.' });
+                    return;
+                }
+
+                console.log('Continue URL set to:', continueUrl);
                 updateProgress(data);
-                continueImport();
+                setTimeout(continueImport, 1000); // Start with 1 second delay
             } else if (data.status === 'completed') {
                 handleImportComplete(data);
             } else {
@@ -163,29 +185,54 @@
             }
         })
         .catch(error => {
-            console.error('Error:', error);
+            console.error('Initial import error:', error);
             loadingIndicator.style.display = 'none';
-            handleError({ message: 'Erreur de connexion au serveur.' });
+            handleError({ message: 'Erreur de connexion au serveur: ' + error.message });
         });
     });
 
     function continueImport() {
         if (!continueUrl || !importInProgress) {
+            console.log('Stopping import - no URL or not in progress');
             return;
         }
 
+        if (retryCount >= maxRetries) {
+            console.error('Max retries reached');
+            handleError({ message: 'Nombre maximum de tentatives atteint. Veuillez réessayer.' });
+            return;
+        }
+
+        console.log('Continuing import, retry count:', retryCount, 'URL:', continueUrl);
+
         fetch(continueUrl, {
-            method: 'GET',
+            method: 'POST', // Use POST for consistency
             headers: {
-                'X-CSRF-TOKEN': document.querySelector('meta[name="csrf-token"]').getAttribute('content')
+                'X-CSRF-TOKEN': document.querySelector('meta[name="csrf-token"]').getAttribute('content'),
+                'X-Requested-With': 'XMLHttpRequest',
+                'Accept': 'application/json',
+                'Content-Type': 'application/json'
             }
         })
-        .then(response => response.json())
+        .then(response => {
+            console.log('Continue response status:', response.status);
+            if (!response.ok) {
+                throw new Error(`HTTP ${response.status}: ${response.statusText}`);
+            }
+            return response.json();
+        })
         .then(data => {
+            console.log('Continue response data:', data);
+            retryCount = 0; // Reset retry count on success
+
             if (data.status === 'processing') {
                 updateProgress(data);
-                // Continue processing after a short delay
-                setTimeout(continueImport, 1000);
+                // Update continue URL in case it changed
+                if (data.continue_url) {
+                    continueUrl = data.continue_url;
+                }
+                // Continue processing with a 2-second delay to prevent overwhelming the server
+                setTimeout(continueImport, 2000);
             } else if (data.status === 'completed') {
                 handleImportComplete(data);
             } else {
@@ -193,8 +240,15 @@
             }
         })
         .catch(error => {
-            console.error('Error:', error);
-            handleError({ message: 'Erreur lors du traitement.' });
+            console.error('Continue import error:', error);
+            retryCount++;
+
+            if (retryCount < maxRetries) {
+                console.log(`Retrying in 5 seconds (attempt ${retryCount}/${maxRetries})`);
+                setTimeout(continueImport, 5000); // Wait 5 seconds before retry
+            } else {
+                handleError({ message: 'Erreur lors du traitement: ' + error.message });
+            }
         });
     }
 

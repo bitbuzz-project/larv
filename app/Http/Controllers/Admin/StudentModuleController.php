@@ -22,9 +22,23 @@ class StudentModuleController extends Controller
     }
 
     /**
-     * Handle JSON file import for student modules with chunked processing
+     * Handle both initial import and chunk processing
      */
     public function import(Request $request)
+    {
+        // Check if this is a chunk processing request
+        if ($request->has('action') && $request->input('action') === 'process_chunk') {
+            return $this->processChunk($request->input('import_id'));
+        }
+
+        // This is an initial file import
+        return $this->handleFileImport($request);
+    }
+
+    /**
+     * Handle initial file upload and processing
+     */
+    private function handleFileImport(Request $request)
     {
         try {
             $request->validate([
@@ -41,15 +55,6 @@ class StudentModuleController extends Controller
                                 $fail('Le fichier doit être un fichier JSON valide.');
                                 return;
                             }
-
-                            // Quick JSON validation without loading entire file
-                            $handle = fopen($value->getPathname(), 'r');
-                            $firstChunk = fread($handle, 1024);
-                            fclose($handle);
-
-                            if (!str_contains($firstChunk, '{') && !str_contains($firstChunk, '[')) {
-                                $fail('Le fichier JSON est invalide.');
-                            }
                         }
                     },
                 ],
@@ -57,25 +62,13 @@ class StudentModuleController extends Controller
             ]);
 
             $file = $request->file('json_file');
-            $chunkSize = $request->input('chunk_size', 100); // Default chunk size
+            $chunkSize = $request->input('chunk_size', 50);
 
-            // Store file temporarily and create import session
-            $importId = uniqid('import_', true);
-            $tempPath = storage_path('app/temp/' . $importId . '.json');
-
-            // Ensure temp directory exists
-            if (!file_exists(dirname($tempPath))) {
-                mkdir(dirname($tempPath), 0755, true);
-            }
-
-            $file->storeAs('temp', $importId . '.json');
-
-            // Parse JSON and validate structure
-            $jsonContent = file_get_contents($tempPath);
+            // Read and parse JSON directly
+            $jsonContent = file_get_contents($file->getPathname());
             $jsonData = json_decode($jsonContent, true);
 
             if (json_last_error() !== JSON_ERROR_NONE) {
-                unlink($tempPath);
                 return response()->json([
                     'message' => 'Le fichier JSON est invalide.',
                     'errors' => ['json_file' => ['Le fichier JSON est invalide.']]
@@ -86,7 +79,6 @@ class StudentModuleController extends Controller
             $studentModulesData = $this->extractStudentModulesData($jsonData);
 
             if (empty($studentModulesData)) {
-                unlink($tempPath);
                 return response()->json([
                     'message' => 'Aucune donnée de module étudiant trouvée dans le fichier.',
                     'errors' => ['json_file' => ['Aucune donnée valide trouvée.']]
@@ -94,14 +86,18 @@ class StudentModuleController extends Controller
             }
 
             if (count($studentModulesData) > 500000) {
-                unlink($tempPath);
                 return response()->json([
                     'message' => 'Le fichier ne peut pas contenir plus de 500000 modules étudiants à la fois.',
                     'errors' => ['json_file' => ['Limite de 500000 modules dépassée.']]
                 ], 400);
             }
 
-            // Initialize import session
+            // Create import session
+            $importId = uniqid('import_', true);
+
+            // Store data in database chunks
+            $this->storeImportDataInDatabase($importId, $studentModulesData);
+
             $importSession = [
                 'id' => $importId,
                 'total_records' => count($studentModulesData),
@@ -111,11 +107,10 @@ class StudentModuleController extends Controller
                 'errors' => [],
                 'chunk_size' => $chunkSize,
                 'status' => 'pending',
-                'started_at' => now(),
-                'temp_file' => $tempPath
+                'started_at' => now()
             ];
 
-            // Cache the session data
+            // Store session metadata in cache
             Cache::put('import_session_' . $importId, $importSession, now()->addHours(2));
 
             // Start processing first chunk
@@ -135,17 +130,22 @@ class StudentModuleController extends Controller
     /**
      * Process a chunk of the import
      */
-    public function processChunk($importId)
+    private function processChunk($importId)
     {
+        Log::info('Processing chunk for import ID: ' . $importId);
+
         try {
             $importSession = Cache::get('import_session_' . $importId);
 
             if (!$importSession) {
+                Log::error('Import session not found for ID: ' . $importId);
                 return response()->json([
                     'message' => 'Session d\'importation expirée ou introuvable.',
                     'status' => 'error'
                 ], 404);
             }
+
+            Log::info('Import session found', ['status' => $importSession['status'], 'processed' => $importSession['processed']]);
 
             // Check if import is already completed
             if ($importSession['status'] === 'completed') {
@@ -161,31 +161,20 @@ class StudentModuleController extends Controller
                 ]);
             }
 
-            // Load data from temp file
-            if (!file_exists($importSession['temp_file'])) {
-                return response()->json([
-                    'message' => 'Fichier temporaire introuvable.',
-                    'status' => 'error'
-                ], 404);
-            }
-
-            $jsonContent = file_get_contents($importSession['temp_file']);
-            $jsonData = json_decode($jsonContent, true);
-            $studentModulesData = $this->extractStudentModulesData($jsonData);
-
-            // Get chunk to process
+            // Get chunk to process from database
             $startIndex = $importSession['processed'];
-            $chunkData = array_slice($studentModulesData, $startIndex, $importSession['chunk_size']);
+            $chunkData = $this->getImportDataFromDatabase($importId, $startIndex, $importSession['chunk_size']);
+
+            Log::info('Retrieved chunk data', ['start' => $startIndex, 'count' => count($chunkData)]);
 
             if (empty($chunkData)) {
                 // No more data to process, mark as completed
+                Log::info('No more data to process, completing import for ID: ' . $importId);
                 $importSession['status'] = 'completed';
                 $importSession['completed_at'] = now();
 
-                // Clean up temp file
-                if (file_exists($importSession['temp_file'])) {
-                    unlink($importSession['temp_file']);
-                }
+                // Clean up temporary data
+                $this->cleanupImportData($importId);
 
                 // Store final results in session for results page
                 session([
@@ -211,11 +200,12 @@ class StudentModuleController extends Controller
                         'skipped' => $importSession['skipped'],
                         'errors' => count($importSession['errors'])
                     ],
-                    'redirect' => route('admin.student-modules.import.results')
+                    'redirect' => url('/admin/student-modules-import/results')
                 ]);
             }
 
             // Process current chunk
+            Log::info('Processing chunk data for import ID: ' . $importId);
             $chunkResults = $this->processChunkData($chunkData, $startIndex);
 
             // Update session with results
@@ -224,11 +214,26 @@ class StudentModuleController extends Controller
             $importSession['skipped'] += $chunkResults['skipped'];
             $importSession['errors'] = array_merge($importSession['errors'], $chunkResults['errors']);
 
+            // Limit errors array to prevent memory issues
+            if (count($importSession['errors']) > 1000) {
+                $importSession['errors'] = array_slice($importSession['errors'], -1000);
+            }
+
             // Update cache
             Cache::put('import_session_' . $importId, $importSession, now()->addHours(2));
 
             // Calculate progress
             $progress = ($importSession['processed'] / $importSession['total_records']) * 100;
+
+            Log::info('Chunk processed successfully', [
+                'progress' => $progress,
+                'imported' => $chunkResults['imported'],
+                'skipped' => $chunkResults['skipped'],
+                'errors' => count($chunkResults['errors'])
+            ]);
+
+            // Use the same endpoint for continuation - no routing issues!
+            $continueUrl = request()->getSchemeAndHttpHost() . request()->getRequestUri() . '?action=process_chunk&import_id=' . $importId;
 
             return response()->json([
                 'status' => 'processing',
@@ -238,15 +243,95 @@ class StudentModuleController extends Controller
                 'imported' => $importSession['imported'],
                 'skipped' => $importSession['skipped'],
                 'errors' => count($importSession['errors']),
-                'continue_url' => route('admin.student-modules.process-chunk', $importId)
+                'continue_url' => $continueUrl,
+                'import_id' => $importId
             ]);
 
         } catch (\Exception $e) {
-            Log::error('Chunk processing error for import ' . $importId . ': ' . $e->getMessage());
+            Log::error('Chunk processing error for import ' . $importId . ': ' . $e->getMessage(), [
+                'trace' => $e->getTraceAsString()
+            ]);
             return response()->json([
                 'message' => 'Erreur lors du traitement du chunk: ' . $e->getMessage(),
                 'status' => 'error'
             ], 500);
+        }
+    }
+
+    /**
+     * Store import data in database for chunked processing
+     */
+    private function storeImportDataInDatabase($importId, $data)
+    {
+        // Create temporary table if it doesn't exist
+        DB::statement("
+            CREATE TABLE IF NOT EXISTS temp_import_data (
+                id BIGINT AUTO_INCREMENT PRIMARY KEY,
+                import_id VARCHAR(255) NOT NULL,
+                chunk_index INT NOT NULL,
+                data JSON NOT NULL,
+                created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+                INDEX idx_import_id (import_id),
+                INDEX idx_chunk (import_id, chunk_index)
+            ) ENGINE=InnoDB
+        ");
+
+        // Split data into chunks and store each chunk
+        $chunkSize = 1000; // Store 1000 records per database row
+        $chunks = array_chunk($data, $chunkSize);
+
+        foreach ($chunks as $index => $chunk) {
+            DB::table('temp_import_data')->insert([
+                'import_id' => $importId,
+                'chunk_index' => $index,
+                'data' => json_encode($chunk)
+            ]);
+        }
+    }
+
+    /**
+     * Get import data from database
+     */
+    private function getImportDataFromDatabase($importId, $startIndex, $limit)
+    {
+        $chunkSize = 1000; // Same as storage chunk size
+        $startChunk = intval($startIndex / $chunkSize);
+        $endChunk = intval(($startIndex + $limit - 1) / $chunkSize);
+
+        $allData = [];
+
+        // Get all relevant chunks
+        $chunks = DB::table('temp_import_data')
+            ->where('import_id', $importId)
+            ->where('chunk_index', '>=', $startChunk)
+            ->where('chunk_index', '<=', $endChunk)
+            ->orderBy('chunk_index')
+            ->get();
+
+        foreach ($chunks as $chunk) {
+            $data = json_decode($chunk->data, true);
+            $allData = array_merge($allData, $data);
+        }
+
+        // Extract the exact slice we need
+        $offsetInData = $startIndex % $chunkSize;
+        if ($startChunk < $endChunk) {
+            // Data spans multiple chunks, calculate correct offset
+            $offsetInData = $startIndex - ($startChunk * $chunkSize);
+        }
+
+        return array_slice($allData, $offsetInData, $limit);
+    }
+
+    /**
+     * Clean up temporary import data
+     */
+    private function cleanupImportData($importId)
+    {
+        try {
+            DB::table('temp_import_data')->where('import_id', $importId)->delete();
+        } catch (\Exception $e) {
+            Log::warning('Failed to cleanup import data for ' . $importId . ': ' . $e->getMessage());
         }
     }
 
@@ -260,7 +345,7 @@ class StudentModuleController extends Controller
         $errors = [];
 
         // Optimize: Get existing student codes once per chunk
-        $existingStudentApogees = Student::pluck('apol_a01_code')->flip()->toArray();
+        $existingStudentApogees = Student::pluck('apoL_a01_code')->flip()->toArray();
 
         DB::beginTransaction();
 

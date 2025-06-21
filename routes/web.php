@@ -9,6 +9,7 @@ use App\Http\Controllers\Students\ProfileController;
 use App\Http\Controllers\Students\SituationPedagogiqueController;
 use App\Http\Controllers\Admin\ModuleController;
 use App\Http\Controllers\Admin\StudentModuleController; // Add this line
+use App\Http\Controllers\Admin\NoteController;
 
 /*
 |--------------------------------------------------------------------------
@@ -44,7 +45,11 @@ Route::middleware(['auth', 'admin'])->prefix('admin')->name('admin.')->group(fun
     Route::post('/students-import', [AdminStudentController::class, 'import'])->name('students.import');
     Route::get('/students-import-results', [AdminStudentController::class, 'importResults'])->name('students.import.results');
     Route::get('/students-export', [AdminStudentController::class, 'export'])->name('students.export');
-
+    // Notes Management (add this in the admin routes section)
+    Route::get('/notes-import', [NoteController::class, 'showImport'])->name('notes.import');
+    Route::post('/notes-import', [NoteController::class, 'import'])->name('notes.import');
+    Route::get('/notes-import-results', [NoteController::class, 'importResults'])->name('notes.import.results');
+    Route::post('/notes-import-csv', [NoteController::class, 'importCsv'])->name('notes.import.csv');
 
     // Module Management
     Route::resource('modules', ModuleController::class);
@@ -57,8 +62,8 @@ Route::middleware(['auth', 'admin'])->prefix('admin')->name('admin.')->group(fun
     Route::get('/student-modules-import', [StudentModuleController::class, 'showImport'])->name('student-modules.import'); // Add this line
     Route::post('/student-modules-import', [StudentModuleController::class, 'import'])->name('student-modules.import'); // Add this line
     Route::get('/student-modules-import-results', [StudentModuleController::class, 'importResults'])->name('student-modules.import.results'); // Add this line
-    Route::get('/admin/student-modules/process-chunk/{importId}', [StudentModuleController::class, 'processChunk'])
-    ->name('admin.student-modules.process-chunk');
+    Route::get('/admin/student-modules/process-chunk/{importId}', [App\Http\Controllers\Admin\StudentModuleController::class, 'processChunk'])
+        ->name('admin.student-modules.process-chunk');
 
 
 });

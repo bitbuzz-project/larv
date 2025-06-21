@@ -141,6 +141,13 @@
                 <a href="{{ route('admin.students.create') }}" class="btn btn-link text-start">
                     <i>➕</i> Ajouter étudiant
                 </a>
+
+                <div class="sidebar-section">
+    <div class="sidebar-section-title">Gestion des notes</div>
+    <a href="{{ route('admin.notes.import') }}" class="btn btn-link text-start {{ request()->routeIs('admin.notes.*') ? 'active' : '' }}">
+        <i>📊</i> Importer Notes (ODS)
+    </a>
+</div>
                 <a href="{{ route('admin.student-modules.import') }}" class="btn btn-link text-start {{ request()->routeIs('admin.student-modules.import*') ? 'active' : '' }}"> {{-- NEW LINE --}}
                     <i>📥</i> Importer JSON Modules Étudiants {{-- NEW LINE --}}
                 </a> {{-- NEW LINE --}}
