@@ -100,12 +100,22 @@
                         <a href="{{ route('student.dashboard') }}" class="nav-link {{ request()->routeIs('student.dashboard') ? 'active' : '' }}">
                             📊 لوحة التحكم
                         </a>
+                             <!-- Modules Section -->
+                        <div class="nav-section mt-3 mb-2">
+                            <small class="text-light opacity-75 px-3">المواد الدراسية</small>
+                        </div>
+                        <a href="{{ route('student.modules.current-session') }}" class="nav-link {{ request()->routeIs('student.modules.current-session') ? 'active' : '' }}">
+                            📖 المواد الحالية
+                        </a>
+                        <a href="{{ route('student.modules.index') }}" class="nav-link {{ request()->routeIs('student.modules.index') ? 'active' : '' }}">
+                            📋 جميع المواد
+                        </a>
                             <a href="{{ route('student.situation-pedagogique.index') }}" class="nav-link {{ request()->routeIs('student.situation-pedagogique.*') ? 'active' : '' }}">
         📚 الوضعية البيداغوجية
     </a>
-                        <a href="#" class="nav-link">
-                            📋 النتائج
-                        </a>
+                    <a href="{{ route('student.notes.index') }}" class="nav-link {{ request()->routeIs('student.notes.*') ? 'active' : '' }}">
+    📊 النتائج والنقط
+</a>
                         <a href="#" class="nav-link">
                             📚 المواد
                         </a>

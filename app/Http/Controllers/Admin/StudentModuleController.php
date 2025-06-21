@@ -22,508 +22,321 @@ class StudentModuleController extends Controller
     }
 
     /**
-     * Handle both initial import and chunk processing
+     * Handle CSV file import for student module inscriptions
      */
     public function import(Request $request)
     {
-        // Check if this is a chunk processing request
-        if ($request->has('action') && $request->input('action') === 'process_chunk') {
-            return $this->processChunk($request->input('import_id'));
-        }
+        // Increase execution limits for large imports
+        set_time_limit(300); // 5 minutes
+        ini_set('memory_limit', '512M'); // 512MB memory
 
-        // This is an initial file import
-        return $this->handleFileImport($request);
-    }
-
-    /**
-     * Handle initial file upload and processing
-     */
-    private function handleFileImport(Request $request)
-    {
         try {
             $request->validate([
-                'json_file' => [
+                'csv_file' => [
                     'required',
                     'file',
-                    'max:102400', // 100MB max
-                    function ($attribute, $value, $fail) {
-                        if ($value) {
-                            $extension = strtolower($value->getClientOriginalExtension());
-                            $mimeType = $value->getClientMimeType();
+                    'max:51200', // 50MB max
+                    'mimes:csv,txt',
+                ],
+                'import_type' => 'required|in:current_session,historical',
+                'session_type' => 'required_if:import_type,current_session|in:printemps,automne',
+                'annee_scolaire' => 'required|string|max:20',
+                'delimiter' => 'nullable|in:comma,semicolon,tab',
+                'encoding' => 'nullable|in:utf8,latin1',
+            ]);
 
-                            if ($extension !== 'json' && $mimeType !== 'application/json') {
-                                $fail('Le fichier doit être un fichier JSON valide.');
-                                return;
+            $file = $request->file('csv_file');
+            $importType = $request->input('import_type');
+            $sessionType = $request->input('session_type');
+            $anneeScolaire = $request->input('annee_scolaire');
+
+            // CSV options
+            $delimiter = match($request->input('delimiter', 'comma')) {
+                'semicolon' => ';',
+                'tab' => "\t",
+                default => ','
+            };
+            $encoding = $request->input('encoding', 'utf8');
+
+            $imported = 0;
+            $skipped = 0;
+            $errors = [];
+            $lineNumber = 1;
+            $batchSize = 1000;
+            $batchData = [];
+
+            // Get existing student codes once
+            $existingStudentCodes = Student::pluck('apoL_a01_code')->flip()->toArray();
+
+            // Open and read CSV file line by line
+            if (($handle = fopen($file->getPathname(), 'r')) !== FALSE) {
+
+                // Read header row
+                $headers = fgetcsv($handle, 0, $delimiter);
+                if (!$headers) {
+                    throw new \Exception('Impossible de lire les en-têtes du fichier CSV.');
+                }
+
+                // Convert encoding if needed
+                if ($encoding === 'latin1') {
+                    $headers = array_map(function($header) {
+                        return mb_convert_encoding($header, 'UTF-8', 'ISO-8859-1');
+                    }, $headers);
+                }
+
+                // Map headers with flexible matching
+                $expectedHeaders = [
+                    'apoL_a01_code' => ['apol_a01_code', 'apoL_a01_code', 'cod_etu', 'code_etudiant', 'apogee'],
+                    'code_module' => ['code_module', 'cod_module', 'module_code'],
+                    'module' => ['module', 'nom_module', 'lib_module', 'module_name', 'libelle_module']
+                ];
+
+                $headerMap = [];
+                foreach ($headers as $index => $header) {
+                    $cleanHeader = strtolower(trim($header));
+
+                    // Check each expected header and its variants
+                    foreach ($expectedHeaders as $expectedKey => $variants) {
+                        if (in_array($cleanHeader, $variants)) {
+                            $headerMap[$expectedKey] = $index;
+                            break;
+                        }
+                    }
+                }
+
+                // Validate required headers
+                $requiredHeaders = ['apoL_a01_code', 'code_module', 'module'];
+                foreach ($requiredHeaders as $requiredHeader) {
+                    if (!isset($headerMap[$requiredHeader])) {
+                        throw new \Exception("Colonne manquante: {$requiredHeader}");
+                    }
+                }
+
+                $lineNumber = 2;
+
+                // Read data line by line
+                while (($row = fgetcsv($handle, 0, $delimiter)) !== FALSE) {
+
+                    try {
+                        // Convert encoding if needed
+                        if ($encoding === 'latin1') {
+                            $row = array_map(function($cell) {
+                                return mb_convert_encoding($cell, 'UTF-8', 'ISO-8859-1');
+                            }, $row);
+                        }
+
+                        // Skip empty rows
+                        if (empty(array_filter($row))) {
+                            $lineNumber++;
+                            continue;
+                        }
+
+                        $moduleData = [
+                            'apoL_a01_code' => isset($headerMap['apoL_a01_code']) ? trim($row[$headerMap['apoL_a01_code']]) : '',
+                            'code_module' => isset($headerMap['code_module']) ? trim($row[$headerMap['code_module']]) : '',
+                            'module' => isset($headerMap['module']) ? trim($row[$headerMap['module']]) : '',
+                        ];
+
+                        // Validation
+                        if (empty($moduleData['apoL_a01_code'])) {
+                            $errors[] = [
+                                'line' => $lineNumber,
+                                'code' => 'N/A',
+                                'message' => 'Code Apogée manquant',
+                                'type' => 'validation'
+                            ];
+                            $lineNumber++;
+                            continue;
+                        }
+
+                        if (empty($moduleData['code_module'])) {
+                            $errors[] = [
+                                'line' => $lineNumber,
+                                'code' => $moduleData['apoL_a01_code'],
+                                'message' => 'Code module manquant',
+                                'type' => 'validation'
+                            ];
+                            $lineNumber++;
+                            continue;
+                        }
+
+                        if (empty($moduleData['module'])) {
+                            $errors[] = [
+                                'line' => $lineNumber,
+                                'code' => $moduleData['apoL_a01_code'],
+                                'message' => 'Nom du module manquant',
+                                'type' => 'validation'
+                            ];
+                            $lineNumber++;
+                            continue;
+                        }
+
+                        if (!isset($existingStudentCodes[$moduleData['apoL_a01_code']])) {
+                            $errors[] = [
+                                'line' => $lineNumber,
+                                'code' => $moduleData['apoL_a01_code'],
+                                'message' => 'Étudiant non trouvé',
+                                'type' => 'foreign_key'
+                            ];
+                            $skipped++;
+                            $lineNumber++;
+                            continue;
+                        }
+
+                        // Prepare data for batch insert
+                        $insertData = [
+                            'apogee' => $moduleData['apoL_a01_code'],
+                            'module_code' => $moduleData['code_module'],
+                            'module_name' => $moduleData['module'],
+                            'module_name_ar' => null,
+                            'credits' => 0,
+                            'coefficient' => 1.00,
+                            'semester' => 'S1', // Default, can be updated later
+                            'annee_scolaire' => $anneeScolaire,
+                            'status' => $importType === 'current_session' ? 'active' : 'completed',
+                            'professor' => null,
+                            'schedule' => null,
+                            'created_at' => now(),
+                            'updated_at' => now(),
+                        ];
+
+                        // Add session type for current session
+                        if ($importType === 'current_session') {
+                            $insertData['session_type'] = $sessionType;
+                        }
+
+                        $batchData[] = $insertData;
+
+                        // Process batch when it reaches the batch size
+                        if (count($batchData) >= $batchSize) {
+                            $result = $this->processBatch($batchData, $importType, $sessionType, $anneeScolaire);
+                            $imported += $result['inserted'];
+                            $skipped += $result['skipped'];
+                            $errors = array_merge($errors, $result['errors']);
+
+                            $batchData = [];
+
+                            if (function_exists('gc_collect_cycles')) {
+                                gc_collect_cycles();
                             }
                         }
-                    },
+
+                    } catch (\Exception $e) {
+                        $errors[] = [
+                            'line' => $lineNumber,
+                            'code' => $moduleData['apoL_a01_code'] ?? 'N/A',
+                            'message' => 'Erreur ligne: ' . $e->getMessage(),
+                            'type' => 'processing'
+                        ];
+                    }
+
+                    $lineNumber++;
+                }
+
+                // Process remaining batch
+                if (!empty($batchData)) {
+                    $result = $this->processBatch($batchData, $importType, $sessionType, $anneeScolaire);
+                    $imported += $result['inserted'];
+                    $skipped += $result['skipped'];
+                    $errors = array_merge($errors, $result['errors']);
+                }
+
+                fclose($handle);
+
+            } else {
+                throw new \Exception('Impossible d\'ouvrir le fichier CSV.');
+            }
+
+            $totalProcessed = $lineNumber - 2;
+
+            // Store results
+            session([
+                'import_stats' => [
+                    'imported' => $imported,
+                    'skipped' => $skipped,
+                    'errors' => count($errors),
+                    'total' => $totalProcessed,
+                    'success_rate' => $totalProcessed > 0 ? ($imported / $totalProcessed) * 100 : 0,
+                    'import_type' => $importType,
+                    'session_type' => $sessionType,
+                    'annee_scolaire' => $anneeScolaire,
                 ],
-                'chunk_size' => 'nullable|integer|min:10|max:1000'
+                'import_errors' => $errors
             ]);
 
-            $file = $request->file('json_file');
-            $chunkSize = $request->input('chunk_size', 50);
-
-            // Read and parse JSON directly
-            $jsonContent = file_get_contents($file->getPathname());
-            $jsonData = json_decode($jsonContent, true);
-
-            if (json_last_error() !== JSON_ERROR_NONE) {
-                return response()->json([
-                    'message' => 'Le fichier JSON est invalide.',
-                    'errors' => ['json_file' => ['Le fichier JSON est invalide.']]
-                ], 400);
+            if ($imported > 0) {
+                $message = "Import CSV réussi! {$imported} inscriptions importées";
+                if ($skipped > 0) {
+                    $message .= ", {$skipped} ignorées";
+                }
+                if (count($errors) > 0) {
+                    $message .= ", " . count($errors) . " erreurs";
+                }
+                return response()->json(['message' => $message, 'redirect' => route('admin.student-modules.import.results')], 200);
+            } else {
+                return response()->json(['message' => 'Aucune inscription importée. Vérifiez les erreurs.', 'errors' => $errors], 400);
             }
-
-            // Extract student modules data
-            $studentModulesData = $this->extractStudentModulesData($jsonData);
-
-            if (empty($studentModulesData)) {
-                return response()->json([
-                    'message' => 'Aucune donnée de module étudiant trouvée dans le fichier.',
-                    'errors' => ['json_file' => ['Aucune donnée valide trouvée.']]
-                ], 400);
-            }
-
-            if (count($studentModulesData) > 500000) {
-                return response()->json([
-                    'message' => 'Le fichier ne peut pas contenir plus de 500000 modules étudiants à la fois.',
-                    'errors' => ['json_file' => ['Limite de 500000 modules dépassée.']]
-                ], 400);
-            }
-
-            // Create import session
-            $importId = uniqid('import_', true);
-
-            // Store data in database chunks
-            $this->storeImportDataInDatabase($importId, $studentModulesData);
-
-            $importSession = [
-                'id' => $importId,
-                'total_records' => count($studentModulesData),
-                'processed' => 0,
-                'imported' => 0,
-                'skipped' => 0,
-                'errors' => [],
-                'chunk_size' => $chunkSize,
-                'status' => 'pending',
-                'started_at' => now()
-            ];
-
-            // Store session metadata in cache
-            Cache::put('import_session_' . $importId, $importSession, now()->addHours(2));
-
-            // Start processing first chunk
-            return $this->processChunk($importId);
-
-        } catch (ValidationException $e) {
-            throw $e;
-        } catch (\Exception $e) {
-            Log::error('Student module import initialization error: ' . $e->getMessage());
-            return response()->json([
-                'message' => 'Erreur serveur lors de l\'initialisation: ' . $e->getMessage(),
-                'errors' => ['general' => [$e->getMessage()]]
-            ], 500);
-        }
-    }
-
-    /**
-     * Process a chunk of the import
-     */
-    private function processChunk($importId)
-    {
-        Log::info('Processing chunk for import ID: ' . $importId);
-
-        try {
-            $importSession = Cache::get('import_session_' . $importId);
-
-            if (!$importSession) {
-                Log::error('Import session not found for ID: ' . $importId);
-                return response()->json([
-                    'message' => 'Session d\'importation expirée ou introuvable.',
-                    'status' => 'error'
-                ], 404);
-            }
-
-            Log::info('Import session found', ['status' => $importSession['status'], 'processed' => $importSession['processed']]);
-
-            // Check if import is already completed
-            if ($importSession['status'] === 'completed') {
-                return response()->json([
-                    'message' => 'Import déjà terminé.',
-                    'status' => 'completed',
-                    'stats' => [
-                        'total' => $importSession['total_records'],
-                        'imported' => $importSession['imported'],
-                        'skipped' => $importSession['skipped'],
-                        'errors' => count($importSession['errors'])
-                    ]
-                ]);
-            }
-
-            // Get chunk to process from database
-            $startIndex = $importSession['processed'];
-            $chunkData = $this->getImportDataFromDatabase($importId, $startIndex, $importSession['chunk_size']);
-
-            Log::info('Retrieved chunk data', ['start' => $startIndex, 'count' => count($chunkData)]);
-
-            if (empty($chunkData)) {
-                // No more data to process, mark as completed
-                Log::info('No more data to process, completing import for ID: ' . $importId);
-                $importSession['status'] = 'completed';
-                $importSession['completed_at'] = now();
-
-                // Clean up temporary data
-                $this->cleanupImportData($importId);
-
-                // Store final results in session for results page
-                session([
-                    'import_stats' => [
-                        'imported' => $importSession['imported'],
-                        'skipped' => $importSession['skipped'],
-                        'errors' => count($importSession['errors']),
-                        'total' => $importSession['total_records'],
-                        'success_rate' => $importSession['total_records'] > 0 ?
-                            ($importSession['imported'] / $importSession['total_records']) * 100 : 0
-                    ],
-                    'import_errors' => $importSession['errors']
-                ]);
-
-                Cache::put('import_session_' . $importId, $importSession, now()->addHours(2));
-
-                return response()->json([
-                    'status' => 'completed',
-                    'message' => 'Import terminé avec succès!',
-                    'stats' => [
-                        'total' => $importSession['total_records'],
-                        'imported' => $importSession['imported'],
-                        'skipped' => $importSession['skipped'],
-                        'errors' => count($importSession['errors'])
-                    ],
-                    'redirect' => url('/admin/student-modules-import/results')
-                ]);
-            }
-
-            // Process current chunk
-            Log::info('Processing chunk data for import ID: ' . $importId);
-            $chunkResults = $this->processChunkData($chunkData, $startIndex);
-
-            // Update session with results
-            $importSession['processed'] += count($chunkData);
-            $importSession['imported'] += $chunkResults['imported'];
-            $importSession['skipped'] += $chunkResults['skipped'];
-            $importSession['errors'] = array_merge($importSession['errors'], $chunkResults['errors']);
-
-            // Limit errors array to prevent memory issues
-            if (count($importSession['errors']) > 1000) {
-                $importSession['errors'] = array_slice($importSession['errors'], -1000);
-            }
-
-            // Update cache
-            Cache::put('import_session_' . $importId, $importSession, now()->addHours(2));
-
-            // Calculate progress
-            $progress = ($importSession['processed'] / $importSession['total_records']) * 100;
-
-            Log::info('Chunk processed successfully', [
-                'progress' => $progress,
-                'imported' => $chunkResults['imported'],
-                'skipped' => $chunkResults['skipped'],
-                'errors' => count($chunkResults['errors'])
-            ]);
-
-            // Use the same endpoint for continuation - no routing issues!
-            $continueUrl = request()->getSchemeAndHttpHost() . request()->getRequestUri() . '?action=process_chunk&import_id=' . $importId;
-
-            return response()->json([
-                'status' => 'processing',
-                'progress' => round($progress, 2),
-                'processed' => $importSession['processed'],
-                'total' => $importSession['total_records'],
-                'imported' => $importSession['imported'],
-                'skipped' => $importSession['skipped'],
-                'errors' => count($importSession['errors']),
-                'continue_url' => $continueUrl,
-                'import_id' => $importId
-            ]);
 
         } catch (\Exception $e) {
-            Log::error('Chunk processing error for import ' . $importId . ': ' . $e->getMessage(), [
-                'trace' => $e->getTraceAsString()
-            ]);
-            return response()->json([
-                'message' => 'Erreur lors du traitement du chunk: ' . $e->getMessage(),
-                'status' => 'error'
-            ], 500);
+            Log::error('CSV import error: ' . $e->getMessage());
+            return response()->json(['message' => 'Erreur: ' . $e->getMessage()], 500);
         }
     }
 
     /**
-     * Store import data in database for chunked processing
+     * Process a batch of records
      */
-    private function storeImportDataInDatabase($importId, $data)
+    private function processBatch($batchData, $importType, $sessionType, $anneeScolaire)
     {
-        // Create temporary table if it doesn't exist
-        DB::statement("
-            CREATE TABLE IF NOT EXISTS temp_import_data (
-                id BIGINT AUTO_INCREMENT PRIMARY KEY,
-                import_id VARCHAR(255) NOT NULL,
-                chunk_index INT NOT NULL,
-                data JSON NOT NULL,
-                created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
-                INDEX idx_import_id (import_id),
-                INDEX idx_chunk (import_id, chunk_index)
-            ) ENGINE=InnoDB
-        ");
-
-        // Split data into chunks and store each chunk
-        $chunkSize = 1000; // Store 1000 records per database row
-        $chunks = array_chunk($data, $chunkSize);
-
-        foreach ($chunks as $index => $chunk) {
-            DB::table('temp_import_data')->insert([
-                'import_id' => $importId,
-                'chunk_index' => $index,
-                'data' => json_encode($chunk)
-            ]);
-        }
-    }
-
-    /**
-     * Get import data from database
-     */
-    private function getImportDataFromDatabase($importId, $startIndex, $limit)
-    {
-        $chunkSize = 1000; // Same as storage chunk size
-        $startChunk = intval($startIndex / $chunkSize);
-        $endChunk = intval(($startIndex + $limit - 1) / $chunkSize);
-
-        $allData = [];
-
-        // Get all relevant chunks
-        $chunks = DB::table('temp_import_data')
-            ->where('import_id', $importId)
-            ->where('chunk_index', '>=', $startChunk)
-            ->where('chunk_index', '<=', $endChunk)
-            ->orderBy('chunk_index')
-            ->get();
-
-        foreach ($chunks as $chunk) {
-            $data = json_decode($chunk->data, true);
-            $allData = array_merge($allData, $data);
-        }
-
-        // Extract the exact slice we need
-        $offsetInData = $startIndex % $chunkSize;
-        if ($startChunk < $endChunk) {
-            // Data spans multiple chunks, calculate correct offset
-            $offsetInData = $startIndex - ($startChunk * $chunkSize);
-        }
-
-        return array_slice($allData, $offsetInData, $limit);
-    }
-
-    /**
-     * Clean up temporary import data
-     */
-    private function cleanupImportData($importId)
-    {
-        try {
-            DB::table('temp_import_data')->where('import_id', $importId)->delete();
-        } catch (\Exception $e) {
-            Log::warning('Failed to cleanup import data for ' . $importId . ': ' . $e->getMessage());
-        }
-    }
-
-    /**
-     * Process a chunk of data
-     */
-    private function processChunkData($chunkData, $startIndex)
-    {
-        $imported = 0;
+        $inserted = 0;
         $skipped = 0;
         $errors = [];
 
-        // Optimize: Get existing student codes once per chunk
-        $existingStudentApogees = Student::pluck('apoL_a01_code')->flip()->toArray();
-
-        DB::beginTransaction();
-
         try {
-            foreach ($chunkData as $index => $moduleData) {
-                $lineNumber = $startIndex + $index + 1;
+            DB::beginTransaction();
 
-                try {
-                    $mappedData = $this->mapJsonToDatabase($moduleData);
+            // Simple duplicate check - check existing records
+            $newRecords = [];
+            foreach ($batchData as $record) {
+                $query = DB::table('peda_modules')
+                    ->where('apogee', $record['apogee'])
+                    ->where('module_code', $record['module_code'])
+                    ->where('annee_scolaire', $anneeScolaire);
 
-                    // Validation
-                    if (!isset($mappedData['apogee']) || empty($mappedData['apogee'])) {
-                        $errors[] = [
-                            'line' => $lineNumber,
-                            'code' => 'N/A',
-                            'message' => 'Code Apogée manquant',
-                            'type' => 'validation'
-                        ];
-                        continue;
-                    }
-
-                    if (!isset($mappedData['module_code']) || empty($mappedData['module_code'])) {
-                        $errors[] = [
-                            'line' => $lineNumber,
-                            'code' => $mappedData['apogee'],
-                            'message' => 'Code module manquant',
-                            'type' => 'validation'
-                        ];
-                        continue;
-                    }
-
-                    if (!isset($mappedData['module_name']) || empty($mappedData['module_name'])) {
-                        $errors[] = [
-                            'line' => $lineNumber,
-                            'code' => $mappedData['apogee'],
-                            'message' => 'Nom du module manquant',
-                            'type' => 'validation'
-                        ];
-                        continue;
-                    }
-
-                    // Check student exists
-                    if (!isset($existingStudentApogees[$mappedData['apogee']])) {
-                        $errors[] = [
-                            'line' => $lineNumber,
-                            'code' => $mappedData['apogee'],
-                            'message' => 'Étudiant non trouvé dans la base de données',
-                            'type' => 'foreign_key_check'
-                        ];
-                        $skipped++;
-                        continue;
-                    }
-
-                    // Check if module already exists
-                    if (PedaModule::where('apogee', $mappedData['apogee'])
-                                  ->where('module_code', $mappedData['module_code'])
-                                  ->where('annee_scolaire', $mappedData['annee_scolaire'])
-                                  ->where('semester', $mappedData['semester'])
-                                  ->exists()) {
-                        $skipped++;
-                        continue;
-                    }
-
-                    PedaModule::create($mappedData);
-                    $imported++;
-
-                } catch (\Exception $e) {
-                    $errors[] = [
-                        'line' => $lineNumber,
-                        'code' => $mappedData['apogee'] ?? 'N/A',
-                        'message' => 'Erreur à l\'insertion: ' . $e->getMessage(),
-                        'type' => 'database_record_error'
-                    ];
+                if ($importType === 'current_session') {
+                    $query->where('session_type', $sessionType);
                 }
+
+                if ($query->exists()) {
+                    $skipped++;
+                } else {
+                    $newRecords[] = $record;
+                }
+            }
+
+            // Insert new records
+            if (!empty($newRecords)) {
+                DB::table('peda_modules')->insert($newRecords);
+                $inserted = count($newRecords);
             }
 
             DB::commit();
 
-            return [
-                'imported' => $imported,
-                'skipped' => $skipped,
-                'errors' => $errors
-            ];
-
         } catch (\Exception $e) {
             DB::rollback();
-            throw $e;
-        }
-    }
-
-    /**
-     * Extract student modules data from JSON structure
-     */
-    private function extractStudentModulesData($jsonData)
-    {
-        $studentModulesData = [];
-
-        if (isset($jsonData['results']) && is_array($jsonData['results'])) {
-            // Oracle export format
-            foreach ($jsonData['results'] as $result) {
-                if (isset($result['items']) && is_array($result['items'])) {
-                    if (!empty($result['items']) && is_string(array_key_first($result['items'][0]))) {
-                        // Items are associative arrays
-                        foreach ($result['items'] as $item) {
-                            $processedItem = [];
-                            foreach ($item as $key => $value) {
-                                $processedItem[strtolower($key)] = $value;
-                            }
-                            $studentModulesData[] = $processedItem;
-                        }
-                    } elseif (isset($result['columns']) && is_array($result['columns'])) {
-                        // Items are indexed arrays with column mapping
-                        $columns = $result['columns'];
-                        $columnNames = array_map(function($col) {
-                            return $col['name'] ?? $col;
-                        }, $columns);
-
-                        foreach ($result['items'] as $item) {
-                            if (is_array($item)) {
-                                $moduleRow = [];
-                                foreach ($item as $index => $value) {
-                                    if (isset($columnNames[$index])) {
-                                        $moduleRow[strtolower($columnNames[$index])] = $value;
-                                    }
-                                }
-                                $studentModulesData[] = $moduleRow;
-                            }
-                        }
-                    }
-                }
-            }
-        } elseif (is_array($jsonData)) {
-            // Direct array of objects
-            foreach ($jsonData as $item) {
-                $processedItem = [];
-                foreach ($item as $key => $value) {
-                    $processedItem[strtolower($key)] = $value;
-                }
-                $studentModulesData[] = $processedItem;
-            }
+            $errors[] = [
+                'line' => 'Batch',
+                'code' => 'N/A',
+                'message' => 'Erreur batch: ' . $e->getMessage(),
+                'type' => 'batch_error'
+            ];
         }
 
-        return $studentModulesData;
-    }
-
-    /**
-     * Map JSON fields to database columns for PedaModule
-     */
-    private function mapJsonToDatabase($moduleData)
-    {
-        $jsonToDbMap = [
-            'apogee' => 'apogee',
-            'cod_elp' => 'module_code',
-            'module' => 'module_name',
-            'ia' => 'professor',
-            'module_name_ar' => 'module_name_ar',
-            'credits' => 'credits',
-            'coefficient' => 'coefficient',
-            'semester' => 'semester',
-            'annee_scolaire' => 'annee_scolaire',
-            'status' => 'status',
-            'schedule' => 'schedule',
+        return [
+            'inserted' => $inserted,
+            'skipped' => $skipped,
+            'errors' => $errors
         ];
-
-        $mapped = [];
-        foreach ($jsonToDbMap as $jsonKey => $dbColumn) {
-            $mapped[$dbColumn] = $moduleData[$jsonKey] ?? null;
-        }
-
-        // Apply defaults
-        $mapped['credits'] = isset($mapped['credits']) ? (int)$mapped['credits'] : 0;
-        $mapped['coefficient'] = isset($mapped['coefficient']) ? (float)$mapped['coefficient'] : 1.00;
-        $mapped['semester'] = $mapped['semester'] ?? 'S1';
-        $mapped['annee_scolaire'] = $mapped['annee_scolaire'] ?? '2024-2025';
-        $mapped['status'] = $mapped['status'] ?? 'active';
-        $mapped['schedule'] = $mapped['schedule'] ?? null;
-
-        return $mapped;
     }
 
     /**

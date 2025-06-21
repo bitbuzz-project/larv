@@ -90,7 +90,7 @@ class NoteController extends Controller
                 }
 
                 // Map headers
-                $expectedHeaders = ['apoL_a01_code', 'code_module', 'nom_module', 'note'];
+                $expectedHeaders = ['apol_a01_code', 'code_module', 'nom_module', 'note'];
                 $headerMap = [];
 
                 foreach ($headers as $index => $header) {
@@ -127,7 +127,7 @@ class NoteController extends Controller
                         }
 
                         $noteData = [
-                            'apoL_a01_code' => isset($headerMap['apoL_a01_code']) ? trim($row[$headerMap['apoL_a01_code']]) : '',
+                            'apoL_a01_code' => isset($headerMap['apol_a01_code']) ? trim($row[$headerMap['apol_a01_code']]) : '',
                             'code_module' => isset($headerMap['code_module']) ? trim($row[$headerMap['code_module']]) : '',
                             'nom_module' => isset($headerMap['nom_module']) ? trim($row[$headerMap['nom_module']]) : '',
                             'note' => isset($headerMap['note']) ? $row[$headerMap['note']] : null,
@@ -396,7 +396,7 @@ class NoteController extends Controller
 
             // Map headers to expected columns with flexible matching
             $expectedHeaders = [
-                'apoL_a01_code' => ['apoL_a01_code', 'apoL_a01_code', 'cod_etu', 'code_etudiant', 'apogee'],
+                'apoL_a01_code' => ['apol_a01_code', 'apoL_a01_code', 'cod_etu', 'code_etudiant', 'apogee'],
                 'code_module' => ['code_module', 'cod_module', 'module_code'],
                 'nom_module' => ['nom_module', 'lib_module', 'module_name', 'libelle_module'],
                 'note' => ['note', 'grade', 'resultat']

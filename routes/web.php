@@ -10,6 +10,8 @@ use App\Http\Controllers\Students\SituationPedagogiqueController;
 use App\Http\Controllers\Admin\ModuleController;
 use App\Http\Controllers\Admin\StudentModuleController; // Add this line
 use App\Http\Controllers\Admin\NoteController;
+use App\Http\Controllers\Students\StudentsNoteController;
+
 
 /*
 |--------------------------------------------------------------------------
@@ -68,6 +70,9 @@ Route::middleware(['auth', 'admin'])->prefix('admin')->name('admin.')->group(fun
 
 });
 
+
+
+
 // Student Routes
 Route::middleware(['auth', 'student'])->prefix('student')->name('student.')->group(function () {
     Route::get('/dashboard', [DashboardController::class, 'index'])->name('dashboard');
@@ -78,11 +83,23 @@ Route::middleware(['auth', 'student'])->prefix('student')->name('student.')->gro
     Route::put('/profile', [ProfileController::class, 'update'])->name('profile.update');
     Route::get('/profile/change-password', [ProfileController::class, 'showChangePasswordForm'])->name('profile.change-password');
     Route::post('/profile/change-password', [ProfileController::class, 'updatePassword'])->name('profile.update-password');
-        // Situation Pédagogique Routes
+
+    // Situation Pédagogique Routes
     Route::get('/situation-pedagogique', [SituationPedagogiqueController::class, 'index'])->name('situation-pedagogique.index');
     Route::get('/situation-pedagogique/{year}', [SituationPedagogiqueController::class, 'showYear'])->name('situation-pedagogique.year');
 
+    Route::get('/notes', [\App\Http\Controllers\Students\StudentsNoteController::class, 'index'])->name('notes.index');
+    Route::get('/notes/{noteId}/{table?}', [\App\Http\Controllers\Students\StudentsNoteController::class, 'show'])->name('notes.show');
+    // NEW: Student Modules Routes
+    Route::prefix('modules')->name('modules.')->group(function () {
+        Route::get('/', [\App\Http\Controllers\Students\ModulesController::class, 'index'])->name('index');
+        Route::get('/current-session', [\App\Http\Controllers\Students\ModulesController::class, 'currentSession'])->name('current-session');
+        Route::get('/show/{module}', [\App\Http\Controllers\Students\ModulesController::class, 'show'])->name('show');
+        Route::get('/export-pdf', [\App\Http\Controllers\Students\ModulesController::class, 'exportPdf'])->name('export-pdf');
+    });
+
 });
+
 
 // Fallback route for testing
 Route::fallback(function () {

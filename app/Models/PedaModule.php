@@ -23,6 +23,7 @@ class PedaModule extends Model
         'status',
         'professor',
         'schedule',
+        'session_type', // Added for current session imports
     ];
 
     protected $casts = [
@@ -60,9 +61,31 @@ class PedaModule extends Model
         return $query->where('annee_scolaire', $year);
     }
 
+    public function scopeCurrentSession($query)
+    {
+        return $query->where('status', 'active');
+    }
+
+    public function scopeBySessionType($query, $sessionType)
+    {
+        return $query->where('session_type', $sessionType);
+    }
+
     // Accessors
     public function getFullModuleNameAttribute()
     {
         return $this->module_name_ar ?: $this->module_name;
+    }
+
+    public function getStatusLabelAttribute()
+    {
+        $labels = [
+            'active' => 'نشط',
+            'completed' => 'مكتمل',
+            'failed' => 'راسب',
+            'withdrawn' => 'منسحب',
+        ];
+
+        return $labels[$this->status] ?? $this->status;
     }
 }

@@ -1,114 +1,222 @@
 @extends('layouts.admin')
 
-@section('title', 'Importer les modules des étudiants')
+@section('title', 'Importer les Inscriptions Pédagogiques')
 
 @section('content')
-<div class="container-fluid">
-    <h1 class="h3 mb-4 text-gray-800">Importer les modules des étudiants</h1>
-
-    <div class="card shadow mb-4">
-        <div class="card-header py-3">
-            <h6 class="m-0 font-weight-bold text-danger">Télécharger un fichier JSON des modules étudiants</h6>
+<div class="row justify-content-center">
+    <div class="col-md-10">
+        <div class="d-flex justify-content-between align-items-center mb-4">
+            <h2><i>📊</i> Importer les Inscriptions Pédagogiques</h2>
+            <a href="{{ route('admin.dashboard') }}" class="btn btn-secondary">
+                <i>⬅️</i> Retour au tableau de bord
+            </a>
         </div>
-        <div class="card-body">
-            @if(session('status'))
-                <div class="alert alert-success">{{ session('status') }}</div>
-            @endif
 
-            <form id="importForm" action="{{ route('admin.student-modules.import') }}" method="POST" enctype="multipart/form-data">
-                @csrf
-                <div class="mb-3">
-                    <label for="json_file" class="form-label">Sélectionner un fichier JSON:</label>
-                    <input type="file" class="form-control" id="json_file" name="json_file" accept=".json">
-                    @error('json_file')
-                        <div class="text-danger mt-2">{{ $message }}</div>
-                    @enderror
+        <!-- Statistics Cards -->
+        <div class="row mb-4">
+            <div class="col-md-3">
+                <div class="card border-0 shadow-sm text-center" style="background: linear-gradient(135deg, #17a2b8, #138496);">
+                    <div class="card-body text-white">
+                        <h3 id="current-modules">{{ \App\Models\PedaModule::count() }}</h3>
+                        <p class="mb-0">Inscriptions Actuelles</p>
+                    </div>
                 </div>
-
-                <div class="mb-3">
-                    <label for="chunk_size" class="form-label">Taille des chunks (optionnel):</label>
-                    <select class="form-control" id="chunk_size" name="chunk_size">
-                        <option value="25">25 enregistrements par chunk (pour très gros fichiers)</option>
-                        <option value="50" selected>50 enregistrements par chunk (recommandé)</option>
-                        <option value="100">100 enregistrements par chunk</option>
-                        <option value="200">200 enregistrements par chunk (pour petits fichiers)</option>
-                    </select>
-                    <small class="form-text text-muted">Pour les très gros fichiers (90k+ enregistrements), utilisez 25-50 pour éviter les timeouts.</small>
+            </div>
+            <div class="col-md-3">
+                <div class="card border-0 shadow-sm text-center" style="background: linear-gradient(135deg, #28a745, #20c997);">
+                    <div class="card-body text-white">
+                        <h3 id="ready-to-import">0</h3>
+                        <p class="mb-0">Prêts à Importer</p>
+                    </div>
                 </div>
+            </div>
+            <div class="col-md-3">
+                <div class="card border-0 shadow-sm text-center" style="background: linear-gradient(135deg, #ffc107, #e0a800);">
+                    <div class="card-body text-white">
+                        <h3 id="skipped-count">0</h3>
+                        <p class="mb-0">Ignorées</p>
+                    </div>
+                </div>
+            </div>
+            <div class="col-md-3">
+                <div class="card border-0 shadow-sm text-center" style="background: linear-gradient(135deg, #dc3545, #c82333);">
+                    <div class="card-body text-white">
+                        <h3 id="validation-status">En Attente</h3>
+                        <p class="mb-0">Statut</p>
+                    </div>
+                </div>
+            </div>
+        </div>
 
-                <button type="submit" class="btn btn-danger" id="submitBtn">Importer les modules</button>
-            </form>
-
-            <!-- Progress Section -->
-            <div id="progressSection" class="mt-4" style="display:none;">
-                <div class="card">
-                    <div class="card-header">
-                        <h5 class="card-title mb-0">Progression de l'importation</h5>
+        <div class="row">
+            <div class="col-md-8">
+                <div class="card border-0 shadow-sm mb-4">
+                    <div class="card-header bg-danger text-white">
+                        <h5 class="mb-0"><i>📁</i> Sélectionner le fichier CSV</h5>
                     </div>
                     <div class="card-body">
-                        <div class="progress mb-3" style="height: 25px;">
-                            <div id="progressBar" class="progress-bar progress-bar-striped progress-bar-animated"
-                                 role="progressbar" style="width: 0%" aria-valuenow="0" aria-valuemin="0" aria-valuemax="100">
-                                0%
-                            </div>
-                        </div>
+                        <form id="import-form">
+                            @csrf
 
-                        <div class="row">
-                            <div class="col-md-3">
-                                <div class="card bg-light">
-                                    <div class="card-body text-center">
-                                        <h5 class="card-title">Total</h5>
-                                        <p class="card-text h4" id="totalRecords">0</p>
+                            <!-- Import Type Selection -->
+                            <div class="mb-4">
+                                <label class="form-label">Type d'importation <span class="text-danger">*</span></label>
+                                <div class="row">
+                                    <div class="col-md-6">
+                                        <div class="form-check">
+                                            <input class="form-check-input" type="radio" name="import_type" id="historical" value="historical" required>
+                                            <label class="form-check-label" for="historical">
+                                                <strong>Historique</strong><br>
+                                                <small class="text-muted">Inscriptions des années précédentes</small>
+                                            </label>
+                                        </div>
+                                    </div>
+                                    <div class="col-md-6">
+                                        <div class="form-check">
+                                            <input class="form-check-input" type="radio" name="import_type" id="current_session" value="current_session" required>
+                                            <label class="form-check-label" for="current_session">
+                                                <strong>Session actuelle</strong><br>
+                                                <small class="text-muted">Inscriptions de la session en cours</small>
+                                            </label>
+                                        </div>
                                     </div>
                                 </div>
                             </div>
-                            <div class="col-md-3">
-                                <div class="card bg-success text-white">
-                                    <div class="card-body text-center">
-                                        <h5 class="card-title">Importés</h5>
-                                        <p class="card-text h4" id="importedRecords">0</p>
-                                    </div>
-                                </div>
-                            </div>
-                            <div class="col-md-3">
-                                <div class="card bg-warning text-white">
-                                    <div class="card-body text-center">
-                                        <h5 class="card-title">Ignorés</h5>
-                                        <p class="card-text h4" id="skippedRecords">0</p>
-                                    </div>
-                                </div>
-                            </div>
-                            <div class="col-md-3">
-                                <div class="card bg-danger text-white">
-                                    <div class="card-body text-center">
-                                        <h5 class="card-title">Erreurs</h5>
-                                        <p class="card-text h4" id="errorRecords">0</p>
-                                    </div>
-                                </div>
-                            </div>
-                        </div>
 
-                        <div class="mt-3">
-                            <p class="mb-1">Traitement en cours... <span id="processedRecords">0</span> / <span id="totalRecordsText">0</span></p>
-                            <p class="mb-0 text-muted">Veuillez ne pas fermer cette page pendant l'importation.</p>
-                        </div>
+                            <!-- Année Scolaire -->
+                            <div class="mb-3">
+                                <label for="annee_scolaire" class="form-label">Année scolaire <span class="text-danger">*</span></label>
+                                <input type="text" class="form-control" id="annee_scolaire" name="annee_scolaire"
+                                       value="2024-2025" placeholder="ex: 2024-2025" required>
+                            </div>
+
+                            <!-- Current Session Options -->
+                            <div id="current_session_options" style="display: none;">
+                                <div class="mb-3">
+                                    <label for="session_type" class="form-label">Type de session <span class="text-danger">*</span></label>
+                                    <select class="form-control" id="session_type" name="session_type">
+                                        <option value="">-- Sélectionner --</option>
+                                        <option value="printemps">Printemps</option>
+                                        <option value="automne">Automne</option>
+                                    </select>
+                                </div>
+                            </div>
+
+                            <!-- File Selection -->
+                            <div class="mb-3">
+                                <label for="csv_file" class="form-label">Fichier CSV <span class="text-danger">*</span></label>
+                                <input type="file" class="form-control" id="csv_file" name="csv_file" accept=".csv" required>
+                                <small class="form-text text-muted">Format CSV uniquement (max 50MB)</small>
+                            </div>
+
+                            <!-- CSV Options -->
+                            <div class="mb-3">
+                                <div class="card">
+                                    <div class="card-header">
+                                        <h6 class="mb-0">Options CSV</h6>
+                                    </div>
+                                    <div class="card-body">
+                                        <div class="row">
+                                            <div class="col-md-6">
+                                                <label class="form-label">Séparateur:</label>
+                                                <select name="delimiter" class="form-select">
+                                                    <option value="comma">Virgule (,)</option>
+                                                    <option value="semicolon">Point-virgule (;)</option>
+                                                    <option value="tab">Tabulation</option>
+                                                </select>
+                                            </div>
+                                            <div class="col-md-6">
+                                                <label class="form-label">Encodage:</label>
+                                                <select name="encoding" class="form-select">
+                                                    <option value="utf8">UTF-8</option>
+                                                    <option value="latin1">Latin-1/ISO-8859-1</option>
+                                                </select>
+                                            </div>
+                                        </div>
+                                    </div>
+                                </div>
+                            </div>
+
+                            <!-- Progress Section -->
+                            <div id="progress-section" class="mb-4" style="display: none;">
+                                <div class="alert alert-info">
+                                    <div class="d-flex align-items-center">
+                                        <div class="spinner-border spinner-border-sm me-2" role="status">
+                                            <span class="visually-hidden">Chargement...</span>
+                                        </div>
+                                        <span>Importation en cours...</span>
+                                    </div>
+                                </div>
+                            </div>
+
+                            <!-- Error Messages -->
+                            <div id="error-messages" class="mb-4" style="display: none;">
+                                <div class="alert alert-danger">
+                                    <h6>Erreurs d'importation:</h6>
+                                    <ul id="error-list" class="mb-0"></ul>
+                                </div>
+                            </div>
+
+                            <!-- Form Actions -->
+                            <div class="d-flex justify-content-end gap-2">
+                                <a href="{{ route('admin.dashboard') }}" class="btn btn-secondary">
+                                    <i>❌</i> Annuler
+                                </a>
+                                <button type="submit" class="btn btn-danger" id="import-btn">
+                                    <i>📊</i> Importer les Inscriptions
+                                </button>
+                            </div>
+                        </form>
                     </div>
                 </div>
             </div>
 
-            <!-- Loading Indicator -->
-            <div id="loadingIndicator" class="mt-3" style="display:none;">
-                <div class="spinner-border text-danger" role="status">
-                    <span class="visually-hidden">Chargement...</span>
-                </div>
-                <span class="ms-2">Initialisation de l'importation...</span>
-            </div>
+            <div class="col-md-4">
+                <div class="card border-0 shadow-sm mb-4">
+                    <div class="card-header bg-info text-white">
+                        <h6 class="mb-0"><i>ℹ️</i> Format CSV attendu</h6>
+                    </div>
+                    <div class="card-body">
+                        <h6>Colonnes requises:</h6>
+                        <ul class="list-unstyled">
+                            <li><i style="color: green;">✓</i> <strong>apoL_a01_code</strong> - Code Apogée étudiant</li>
+                            <li><i style="color: green;">✓</i> <strong>code_module</strong> - Code du module</li>
+                            <li><i style="color: green;">✓</i> <strong>module</strong> - Nom du module</li>
+                        </ul>
 
-            <!-- Error Messages -->
-            <div id="errorMessages" class="mt-3" style="display:none;">
-                <div class="alert alert-danger" role="alert">
-                    <h4 class="alert-heading">Erreurs d'importation:</h4>
-                    <ul id="errorList"></ul>
+                        <h6 class="mt-3">Colonnes alternatives acceptées:</h6>
+                        <ul class="list-unstyled small">
+                            <li><i>○</i> <code>cod_etu</code>, <code>apogee</code> pour le code étudiant</li>
+                            <li><i>○</i> <code>cod_module</code>, <code>module_code</code> pour le code module</li>
+                            <li><i>○</i> <code>nom_module</code>, <code>lib_module</code> pour le nom</li>
+                        </ul>
+
+                        <div class="alert alert-warning mt-3">
+                            <small>
+                                <strong>⚠️ Important :</strong><br>
+                                • Les étudiants doivent exister dans la base<br>
+                                • Format CSV uniquement<br>
+                                • Max 50MB par fichier<br>
+                                • Encodage UTF-8 recommandé
+                            </small>
+                        </div>
+                    </div>
+                </div>
+
+                <div class="card border-0 shadow-sm">
+                    <div class="card-header bg-success text-white">
+                        <h6 class="mb-0"><i>📄</i> Exemple CSV</h6>
+                    </div>
+                    <div class="card-body">
+                        <p class="small">Exemple de structure :</p>
+                        <pre class="small text-muted">apoL_a01_code,code_module,module
+12345678,INFO101,Introduction Informatique
+12345678,MATH201,Mathématiques 2
+12345679,INFO101,Introduction Informatique</pre>
+                        <button type="button" class="btn btn-outline-success btn-sm mt-2" onclick="downloadTemplate()">
+                            <i>⬇️</i> Télécharger Modèle
+                        </button>
+                    </div>
                 </div>
             </div>
         </div>
@@ -116,240 +224,89 @@
 </div>
 
 <script>
-    let importInProgress = false;
-    let continueUrl = null;
-    let retryCount = 0;
-    let maxRetries = 3;
+document.addEventListener('DOMContentLoaded', function() {
+    const importTypeRadios = document.querySelectorAll('input[name="import_type"]');
+    const currentSessionOptions = document.getElementById('current_session_options');
+    const sessionTypeSelect = document.getElementById('session_type');
 
-    document.getElementById('importForm').addEventListener('submit', function(e) {
+    // Handle import type change
+    importTypeRadios.forEach(radio => {
+        radio.addEventListener('change', function() {
+            if (this.value === 'current_session') {
+                currentSessionOptions.style.display = 'block';
+                sessionTypeSelect.required = true;
+            } else {
+                currentSessionOptions.style.display = 'none';
+                sessionTypeSelect.required = false;
+                sessionTypeSelect.value = '';
+            }
+        });
+    });
+
+    // Handle form submission
+    document.getElementById('import-form').addEventListener('submit', async function(e) {
         e.preventDefault();
 
-        if (importInProgress) {
-            return;
-        }
-
-        const form = e.target;
-        const formData = new FormData(form);
-        const loadingIndicator = document.getElementById('loadingIndicator');
-        const errorMessagesDiv = document.getElementById('errorMessages');
-        const progressSection = document.getElementById('progressSection');
-        const submitBtn = document.getElementById('submitBtn');
+        const formData = new FormData(this);
+        const progressSection = document.getElementById('progress-section');
+        const errorMessages = document.getElementById('error-messages');
+        const importBtn = document.getElementById('import-btn');
 
         // Reset UI
-        resetUI();
-        loadingIndicator.style.display = 'block';
-        submitBtn.disabled = true;
-        importInProgress = true;
-        retryCount = 0;
+        progressSection.style.display = 'block';
+        errorMessages.style.display = 'none';
+        importBtn.disabled = true;
 
-        // Start import
-        fetch(form.action, {
-            method: 'POST',
-            body: formData,
-            headers: {
-                'X-CSRF-TOKEN': document.querySelector('meta[name="csrf-token"]').getAttribute('content'),
-                'X-Requested-With': 'XMLHttpRequest'
-            }
-        })
-        .then(response => {
-            if (!response.ok) {
-                throw new Error(`HTTP ${response.status}: ${response.statusText}`);
-            }
-            return response.json();
-        })
-        .then(data => {
-            console.log('Initial response:', data);
-            loadingIndicator.style.display = 'none';
+        try {
+            const response = await fetch('{{ route('admin.student-modules.import') }}', {
+                method: 'POST',
+                body: formData,
+                headers: {
+                    'X-CSRF-TOKEN': document.querySelector('meta[name="csrf-token"]').getAttribute('content'),
+                    'Accept': 'application/json'
+                }
+            });
 
-            if (data.status === 'processing') {
-                progressSection.style.display = 'block';
+            const data = await response.json();
 
-                // Build continue URL more reliably
-                if (data.continue_url) {
-                    continueUrl = data.continue_url;
-                } else if (data.import_id) {
-                    // Fallback: construct URL manually
-                    continueUrl = window.location.origin + '/admin/student-modules-import/process-chunk/' + data.import_id;
+            if (response.ok) {
+                if (data.redirect) {
+                    window.location.href = data.redirect;
                 } else {
-                    handleError({ message: 'URL de continuation manquante dans la réponse du serveur.' });
-                    return;
+                    alert(data.message || 'Import réussi!');
                 }
-
-                console.log('Continue URL set to:', continueUrl);
-                updateProgress(data);
-                setTimeout(continueImport, 1000); // Start with 1 second delay
-            } else if (data.status === 'completed') {
-                handleImportComplete(data);
             } else {
-                handleError(data);
+                throw new Error(data.message || 'Erreur lors de l\'importation');
             }
-        })
-        .catch(error => {
-            console.error('Initial import error:', error);
-            loadingIndicator.style.display = 'none';
-            handleError({ message: 'Erreur de connexion au serveur: ' + error.message });
-        });
-    });
 
-    function continueImport() {
-        if (!continueUrl || !importInProgress) {
-            console.log('Stopping import - no URL or not in progress');
-            return;
-        }
-
-        if (retryCount >= maxRetries) {
-            console.error('Max retries reached');
-            handleError({ message: 'Nombre maximum de tentatives atteint. Veuillez réessayer.' });
-            return;
-        }
-
-        console.log('Continuing import, retry count:', retryCount, 'URL:', continueUrl);
-
-        fetch(continueUrl, {
-            method: 'POST', // Use POST for consistency
-            headers: {
-                'X-CSRF-TOKEN': document.querySelector('meta[name="csrf-token"]').getAttribute('content'),
-                'X-Requested-With': 'XMLHttpRequest',
-                'Accept': 'application/json',
-                'Content-Type': 'application/json'
-            }
-        })
-        .then(response => {
-            console.log('Continue response status:', response.status);
-            if (!response.ok) {
-                throw new Error(`HTTP ${response.status}: ${response.statusText}`);
-            }
-            return response.json();
-        })
-        .then(data => {
-            console.log('Continue response data:', data);
-            retryCount = 0; // Reset retry count on success
-
-            if (data.status === 'processing') {
-                updateProgress(data);
-                // Update continue URL in case it changed
-                if (data.continue_url) {
-                    continueUrl = data.continue_url;
-                }
-                // Continue processing with a 2-second delay to prevent overwhelming the server
-                setTimeout(continueImport, 2000);
-            } else if (data.status === 'completed') {
-                handleImportComplete(data);
-            } else {
-                handleError(data);
-            }
-        })
-        .catch(error => {
-            console.error('Continue import error:', error);
-            retryCount++;
-
-            if (retryCount < maxRetries) {
-                console.log(`Retrying in 5 seconds (attempt ${retryCount}/${maxRetries})`);
-                setTimeout(continueImport, 5000); // Wait 5 seconds before retry
-            } else {
-                handleError({ message: 'Erreur lors du traitement: ' + error.message });
-            }
-        });
-    }
-
-    function updateProgress(data) {
-        const progress = Math.round(data.progress || 0);
-        const progressBar = document.getElementById('progressBar');
-
-        progressBar.style.width = progress + '%';
-        progressBar.setAttribute('aria-valuenow', progress);
-        progressBar.textContent = progress + '%';
-
-        document.getElementById('totalRecords').textContent = data.total || 0;
-        document.getElementById('totalRecordsText').textContent = data.total || 0;
-        document.getElementById('processedRecords').textContent = data.processed || 0;
-        document.getElementById('importedRecords').textContent = data.imported || 0;
-        document.getElementById('skippedRecords').textContent = data.skipped || 0;
-        document.getElementById('errorRecords').textContent = data.errors || 0;
-    }
-
-    function handleImportComplete(data) {
-        importInProgress = false;
-
-        // Update final progress
-        updateProgress({
-            progress: 100,
-            total: data.stats.total,
-            processed: data.stats.total,
-            imported: data.stats.imported,
-            skipped: data.stats.skipped,
-            errors: data.stats.errors
-        });
-
-        // Update progress bar to success
-        const progressBar = document.getElementById('progressBar');
-        progressBar.classList.remove('progress-bar-animated', 'progress-bar-striped');
-        progressBar.classList.add('bg-success');
-
-        // Show success message and redirect
-        setTimeout(() => {
-            if (data.redirect) {
-                window.location.href = data.redirect;
-            } else {
-                alert('Importation terminée avec succès!');
-                resetForm();
-            }
-        }, 2000);
-    }
-
-    function handleError(data) {
-        importInProgress = false;
-        const errorMessagesDiv = document.getElementById('errorMessages');
-        const errorList = document.getElementById('errorList');
-
-        errorMessagesDiv.style.display = 'block';
-        errorList.innerHTML = '';
-
-        let displayMessage = data.message || 'Une erreur inattendue est survenue.';
-
-        if (data.errors) {
-            if (Array.isArray(data.errors)) {
-                data.errors.forEach(err => {
-                    const li = document.createElement('li');
-                    li.textContent = `Ligne ${err.line || 'N/A'}: Code ${err.code || 'N/A'} - ${err.message}`;
-                    errorList.appendChild(li);
-                });
-            } else {
-                for (const key in data.errors) {
-                    data.errors[key].forEach(message => {
-                        const li = document.createElement('li');
-                        li.textContent = message;
-                        errorList.appendChild(li);
-                    });
-                }
-            }
-        } else {
-            const li = document.createElement('li');
-            li.textContent = displayMessage;
-            errorList.appendChild(li);
-        }
-
-        resetForm();
-    }
-
-    function resetUI() {
-        document.getElementById('errorMessages').style.display = 'none';
-        document.getElementById('progressSection').style.display = 'none';
-        document.getElementById('errorList').innerHTML = '';
-    }
-
-    function resetForm() {
-        document.getElementById('submitBtn').disabled = false;
-        importInProgress = false;
-        continueUrl = null;
-    }
-
-    // Prevent page unload during import
-    window.addEventListener('beforeunload', function(e) {
-        if (importInProgress) {
-            e.preventDefault();
-            e.returnValue = 'Une importation est en cours. Êtes-vous sûr de vouloir quitter cette page?';
+        } catch (error) {
+            progressSection.style.display = 'none';
+            errorMessages.style.display = 'block';
+            const errorList = document.getElementById('error-list');
+            errorList.innerHTML = `<li>${error.message}</li>`;
+        } finally {
+            importBtn.disabled = false;
         }
     });
+});
+
+// Download template function
+function downloadTemplate() {
+    const template = `apoL_a01_code,code_module,module
+12345678,INFO101,Introduction à l'Informatique
+12345678,MATH201,Mathématiques 2
+12345678,FRAN101,Français 1
+12345679,INFO101,Introduction à l'Informatique
+12345679,MATH201,Mathématiques 2
+12345680,DROIT301,Droit Civil`;
+
+    const dataBlob = new Blob([template], {type: 'text/csv'});
+    const url = URL.createObjectURL(dataBlob);
+    const link = document.createElement('a');
+    link.href = url;
+    link.download = 'template_inscriptions_pedagogiques.csv';
+    link.click();
+    URL.revokeObjectURL(url);
+}
 </script>
 @endsection
