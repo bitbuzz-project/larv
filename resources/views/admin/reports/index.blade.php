@@ -16,7 +16,12 @@
     }
     .chart-container {
         position: relative;
-        height: 300px;
+        height: 300px !important;
+        width: 100% !important;
+    }
+    .chart-container canvas {
+        max-height: 300px !important;
+        max-width: 100% !important;
     }
     .progress-circle {
         width: 100px;
@@ -30,6 +35,19 @@
     }
     .trend-stable {
         color: #ffc107;
+    }
+    /* Fix for chart responsiveness */
+    .chart-wrapper {
+        position: relative;
+        height: 300px;
+        width: 100%;
+        overflow: hidden;
+    }
+    .chart-wrapper canvas {
+        position: absolute;
+        left: 0;
+        top: 0;
+        pointer-events: none;
     }
 </style>
 
@@ -125,45 +143,57 @@
 
 <!-- Main Analytics Row -->
 <div class="row mb-4">
-    <!-- Student Distribution -->
+    <!-- Student Distribution by Diploma -->
     <div class="col-md-6 mb-4">
         <div class="card metric-card h-100">
             <div class="card-header bg-primary text-white d-flex justify-content-between align-items-center">
-                <h5 class="mb-0"><i>📊</i> Répartition par Filière</h5>
-                <div class="spinner-border spinner-border-sm text-light d-none" id="filiereLoader" role="status">
+                <h5 class="mb-0"><i>📊</i> Répartition par Diplôme</h5>
+                <div class="spinner-border spinner-border-sm text-light d-none" id="diplomaLoader" role="status">
                     <span class="visually-hidden">Loading...</span>
                 </div>
             </div>
             <div class="card-body">
-                @if($administrativeStats['by_filiere']->count() > 0)
-                    <div style="height: 300px; position: relative;">
-                        <canvas id="filiereChart"></canvas>
+                @if($studentStats['by_diploma']->count() > 0)
+                    <div class="chart-wrapper">
+                        <canvas id="diplomaChart"></canvas>
                     </div>
                     <div class="mt-3">
-                        <h6 class="mb-3">Détail par Filière:</h6>
-                        @foreach($administrativeStats['by_filiere']->take(6) as $index => $filiere)
+                        <h6 class="mb-3">Détail par Diplôme:</h6>
+                        @foreach($studentStats['by_diploma']->take(6) as $index => $diploma)
                         <div class="d-flex justify-content-between align-items-center mb-2 p-2 rounded" style="background-color: {{ ['#FF6384', '#36A2EB', '#FFCE56', '#4BC0C0', '#9966FF', '#FF9F40'][$index % 6] }}20;">
                             <div class="d-flex align-items-center">
                                 <span class="badge me-2" style="background-color: {{ ['#FF6384', '#36A2EB', '#FFCE56', '#4BC0C0', '#9966FF', '#FF9F40'][$index % 6] }};">&nbsp;</span>
-                                <span>{{ $filiere->filliere }}</span>
+                                <span>{{ $diploma->cod_dip ?? 'Non spécifié' }}</span>
                             </div>
                             <div>
-                                <span class="badge bg-primary">{{ $filiere->count }}</span>
-                                <small class="text-muted ms-2">{{ number_format(($filiere->count / $administrativeStats['total_current_year']) * 100, 1) }}%</small>
+                                <span class="badge bg-primary">{{ $diploma->count }}</span>
+                                <small class="text-muted ms-2">{{ number_format(($diploma->count / $studentStats['total_students']) * 100, 1) }}%</small>
                             </div>
                         </div>
                         @endforeach
-                        @if($administrativeStats['by_filiere']->count() > 6)
+                        @if($studentStats['by_diploma']->count() > 6)
                         <div class="text-center mt-2">
-                            <small class="text-muted">+{{ $administrativeStats['by_filiere']->count() - 6 }} autres filières</small>
+                            <small class="text-muted">+{{ $studentStats['by_diploma']->count() - 6 }} autres diplômes</small>
+                        </div>
+                        @endif
+                        @if($studentStats['without_diploma'] > 0)
+                        <div class="d-flex justify-content-between align-items-center mb-2 p-2 rounded bg-light">
+                            <div class="d-flex align-items-center">
+                                <span class="badge me-2 bg-secondary">&nbsp;</span>
+                                <span class="text-muted">Sans diplôme spécifié</span>
+                            </div>
+                            <div>
+                                <span class="badge bg-secondary">{{ $studentStats['without_diploma'] }}</span>
+                                <small class="text-muted ms-2">{{ number_format(($studentStats['without_diploma'] / $studentStats['total_students']) * 100, 1) }}%</small>
+                            </div>
                         </div>
                         @endif
                     </div>
                 @else
                     <div class="text-center py-4">
                         <i style="font-size: 3rem; color: #6c757d;">📊</i>
-                        <h6 class="mt-3 text-muted">Aucune donnée de filière disponible</h6>
-                        <p class="text-muted small">Les données administratives seront affichées ici une fois disponibles.</p>
+                        <h6 class="mt-3 text-muted">Aucune donnée de diplôme disponible</h6>
+                        <p class="text-muted small">Les codes de diplôme seront affichés ici une fois disponibles.</p>
                     </div>
                 @endif
             </div>
@@ -219,7 +249,9 @@
                 <h5 class="mb-0"><i>📈</i> Tendances (12 derniers mois)</h5>
             </div>
             <div class="card-body">
-                <canvas id="trendChart" class="chart-container"></canvas>
+                <div class="chart-wrapper">
+                    <canvas id="trendChart"></canvas>
+                </div>
             </div>
         </div>
     </div>
@@ -269,7 +301,9 @@
                 <h5 class="mb-0"><i>📚</i> Statistiques Modules</h5>
             </div>
             <div class="card-body">
-                <canvas id="moduleStatusChart" style="height: 250px;"></canvas>
+                <div class="chart-wrapper" style="height: 250px;">
+                    <canvas id="moduleStatusChart"></canvas>
+                </div>
                 <div class="mt-3">
                     <div class="row text-center">
                         <div class="col-6">
@@ -298,7 +332,9 @@
                 <h5 class="mb-0"><i>⚠️</i> Analyse Réclamations</h5>
             </div>
             <div class="card-body">
-                <canvas id="reclamationChart" style="height: 250px;"></canvas>
+                <div class="chart-wrapper" style="height: 250px;">
+                    <canvas id="reclamationChart"></canvas>
+                </div>
                 <div class="mt-3">
                     @foreach($reclamationStats['by_status'] as $status)
                     <div class="d-flex justify-content-between align-items-center mb-2">
@@ -354,163 +390,49 @@
     </div>
 </div>
 
-<!-- Comparative Analysis -->
-<div class="row mb-4">
-    <div class="col-md-8 mb-4">
-        <div class="card metric-card h-100">
-            <div class="card-header bg-dark text-white">
-                <h5 class="mb-0"><i>📈</i> Analyse Comparative - Sessions</h5>
-            </div>
-            <div class="card-body">
-                <canvas id="sessionComparisonChart" style="height: 300px;"></canvas>
-                <div class="row mt-3">
-                    <div class="col-md-6">
-                        <h6>Session Actuelle</h6>
-                        <div class="d-flex justify-content-between">
-                            <span>Total notes:</span>
-                            <strong>{{ number_format($noteStats['current_session']['total']) }}</strong>
-                        </div>
-                        <div class="d-flex justify-content-between">
-                            <span>Taux de réussite:</span>
-                            <strong class="text-success">{{ $noteStats['current_session']['passed_percentage'] }}%</strong>
-                        </div>
-                    </div>
-                    <div class="col-md-6">
-                        <h6>Session Historique</h6>
-                        <div class="d-flex justify-content-between">
-                            <span>Total notes:</span>
-                            <strong>{{ number_format($noteStats['historical']['total']) }}</strong>
-                        </div>
-                        <div class="d-flex justify-content-between">
-                            <span>Taux de réussite:</span>
-                            <strong class="text-info">{{ $noteStats['historical']['passed_percentage'] }}%</strong>
-                        </div>
-                    </div>
-                </div>
-            </div>
-        </div>
-    </div>
-
-    <div class="col-md-4 mb-4">
-        <div class="card metric-card h-100">
-            <div class="card-header bg-secondary text-white">
-                <h5 class="mb-0"><i>🏆</i> Top Composantes</h5>
-            </div>
-            <div class="card-body">
-                @if($moduleStats['by_component']->count() > 0)
-                    @foreach($moduleStats['by_component']->take(8) as $component)
-                    <div class="d-flex justify-content-between align-items-center mb-2 p-2 rounded bg-light">
-                        <span class="fw-bold">{{ $component->cod_cmp }}</span>
-                        <span class="badge bg-secondary">{{ $component->count }}</span>
-                    </div>
-                    @endforeach
-                @else
-                    <div class="text-center py-3">
-                        <i style="font-size: 2rem; color: #6c757d;">📚</i>
-                        <p class="text-muted mt-2">Aucune composante disponible</p>
-                    </div>
-                @endif
-            </div>
-        </div>
-    </div>
-</div>
-    <!-- Most Popular Modules -->
-    <div class="col-md-6 mb-4">
-        <div class="card metric-card h-100">
-            <div class="card-header bg-secondary text-white">
-                <h5 class="mb-0"><i>🏆</i> Modules les Plus Populaires</h5>
-            </div>
-            <div class="card-body">
-                <div class="table-responsive">
-                    <table class="table table-sm">
-                        <thead>
-                            <tr>
-                                <th>Module</th>
-                                <th>Code</th>
-                                <th>Inscrits</th>
-                            </tr>
-                        </thead>
-                        <tbody>
-                            @foreach($performanceMetrics['most_popular_modules'] as $module)
-                            <tr>
-                                <td>{{ Str::limit($module->module_name, 30) }}</td>
-                                <td><span class="badge bg-primary">{{ $module->module_code }}</span></td>
-                                <td><span class="badge bg-success">{{ $module->enrollment_count }}</span></td>
-                            </tr>
-                            @endforeach
-                        </tbody>
-                    </table>
-                </div>
-            </div>
-        </div>
-    </div>
-
-    <!-- Recent Activity -->
-    <div class="col-md-6 mb-4">
-        <div class="card metric-card h-100">
-            <div class="card-header bg-dark text-white">
-                <h5 class="mb-0"><i>🕒</i> Activité Récente</h5>
-            </div>
-            <div class="card-body">
-                <h6>Derniers étudiants ajoutés:</h6>
-                @foreach($recentActivity['recent_students'] as $student)
-                <div class="d-flex justify-content-between align-items-center mb-2">
-                    <div>
-                        <strong>{{ $student->full_name }}</strong><br>
-                        <small class="text-muted">{{ $student->apoL_a01_code }}</small>
-                    </div>
-                    <small>{{ $student->created_at->diffForHumans() }}</small>
-                </div>
-                @endforeach
-
-                <hr>
-                <h6>Réclamations récentes:</h6>
-                @foreach($recentActivity['recent_reclamations'] as $reclamation)
-                <div class="d-flex justify-content-between align-items-center mb-2">
-                    <div>
-                        <span class="badge bg-{{ $reclamation->status === 'pending' ? 'warning' : 'success' }}">
-                            {{ $reclamation->status }}
-                        </span>
-                        <small class="ms-2">{{ $reclamation->student->full_name ?? 'N/A' }}</small>
-                    </div>
-                    <small>{{ $reclamation->created_at->diffForHumans() }}</small>
-                </div>
-                @endforeach
-            </div>
-        </div>
-    </div>
-</div>
-
-<!-- Action Cards -->
-
-
 <!-- Chart.js CDN -->
 <script src="https://cdn.jsdelivr.net/npm/chart.js"></script>
 
 <script>
-// Filiere Distribution Chart
+// Global Chart.js configuration to prevent sizing issues
+Chart.defaults.responsive = true;
+Chart.defaults.maintainAspectRatio = false;
+Chart.defaults.interaction.intersect = false;
+
+// Wait for DOM to be fully loaded
 document.addEventListener('DOMContentLoaded', function() {
     // Show loader
-    const loader = document.getElementById('filiereLoader');
+    const loader = document.getElementById('diplomaLoader');
     if (loader) loader.classList.remove('d-none');
 
-    // Filiere Chart
-    const filiereCtx = document.getElementById('filiereChart');
-    if (filiereCtx) {
-        const filiereChart = new Chart(filiereCtx, {
+    // Diploma Chart with fixed sizing
+    const diplomaCtx = document.getElementById('diplomaChart');
+    if (diplomaCtx) {
+        // Prepare data for diploma chart
+        const diplomaLabels = [
+            @foreach($studentStats['by_diploma'] as $diploma)
+                '{{ $diploma->cod_dip ?? "Non spécifié" }}',
+            @endforeach
+            @if($studentStats['without_diploma'] > 0)
+                'Sans diplôme'
+            @endif
+        ];
+
+        const diplomaData = [
+            @foreach($studentStats['by_diploma'] as $diploma)
+                {{ $diploma->count }},
+            @endforeach
+            @if($studentStats['without_diploma'] > 0)
+                {{ $studentStats['without_diploma'] }}
+            @endif
+        ];
+
+        const diplomaChart = new Chart(diplomaCtx, {
             type: 'doughnut',
             data: {
-                labels: [
-                    @foreach($administrativeStats['by_filiere'] as $filiere)
-                        '{{ $filiere->filliere }}',
-                    @endforeach
-                ],
+                labels: diplomaLabels,
                 datasets: [{
-                    data: [
-                        @foreach($administrativeStats['by_filiere'] as $filiere)
-                            {{ $filiere->count }},
-                        @endforeach
-                    ],
+                    data: diplomaData,
                     backgroundColor: [
                         '#FF6384',
                         '#36A2EB',
@@ -521,7 +443,8 @@ document.addEventListener('DOMContentLoaded', function() {
                         '#FF9999',
                         '#87CEEB',
                         '#DDA0DD',
-                        '#98FB98'
+                        '#98FB98',
+                        '#CCCCCC'
                     ],
                     borderWidth: 2,
                     borderColor: '#fff'
@@ -535,7 +458,8 @@ document.addEventListener('DOMContentLoaded', function() {
                         position: 'bottom',
                         labels: {
                             padding: 15,
-                            usePointStyle: true
+                            usePointStyle: true,
+                            boxWidth: 12
                         }
                     },
                     tooltip: {
@@ -551,7 +475,7 @@ document.addEventListener('DOMContentLoaded', function() {
                 animation: {
                     animateRotate: true,
                     animateScale: true,
-                    duration: 1000,
+                    duration: 800,
                     onComplete: function() {
                         if (loader) loader.classList.add('d-none');
                     }
@@ -560,7 +484,7 @@ document.addEventListener('DOMContentLoaded', function() {
         });
     }
 
-    // Module Status Chart
+    // Module Status Chart with fixed sizing
     const moduleCtx = document.getElementById('moduleStatusChart');
     if (moduleCtx) {
         new Chart(moduleCtx, {
@@ -596,14 +520,17 @@ document.addEventListener('DOMContentLoaded', function() {
                 },
                 scales: {
                     y: {
-                        beginAtZero: true
+                        beginAtZero: true,
+                        ticks: {
+                            stepSize: 1
+                        }
                     }
                 }
             }
         });
     }
 
-    // Reclamation Chart
+    // Reclamation Chart with fixed sizing
     const reclamationCtx = document.getElementById('reclamationChart');
     if (reclamationCtx) {
         new Chart(reclamationCtx, {
@@ -633,67 +560,17 @@ document.addEventListener('DOMContentLoaded', function() {
                 maintainAspectRatio: false,
                 plugins: {
                     legend: {
-                        position: 'bottom'
+                        position: 'bottom',
+                        labels: {
+                            boxWidth: 12
+                        }
                     }
                 }
             }
         });
     }
 
-    // Session Comparison Chart
-    const sessionCtx = document.getElementById('sessionComparisonChart');
-    if (sessionCtx) {
-        new Chart(sessionCtx, {
-            type: 'bar',
-            data: {
-                labels: ['Session Actuelle', 'Session Historique'],
-                datasets: [{
-                    label: 'Notes Totales',
-                    data: [
-                        {{ $noteStats['current_session']['total'] }},
-                        {{ $noteStats['historical']['total'] }}
-                    ],
-                    backgroundColor: '#36A2EB',
-                    yAxisID: 'y'
-                }, {
-                    label: 'Taux de Réussite (%)',
-                    data: [
-                        {{ $noteStats['current_session']['passed_percentage'] }},
-                        {{ $noteStats['historical']['passed_percentage'] }}
-                    ],
-                    backgroundColor: '#4BC0C0',
-                    type: 'line',
-                    yAxisID: 'y1'
-                }]
-            },
-            options: {
-                responsive: true,
-                maintainAspectRatio: false,
-                interaction: {
-                    mode: 'index',
-                    intersect: false,
-                },
-                scales: {
-                    y: {
-                        type: 'linear',
-                        display: true,
-                        position: 'left',
-                    },
-                    y1: {
-                        type: 'linear',
-                        display: true,
-                        position: 'right',
-                        max: 100,
-                        grid: {
-                            drawOnChartArea: false,
-                        },
-                    }
-                }
-            }
-        });
-    }
-
-    // Trend Chart
+    // Trend Chart with fixed sizing
     const trendCtx = document.getElementById('trendChart');
     if (trendCtx) {
         new Chart(trendCtx, {
@@ -776,13 +653,11 @@ document.addEventListener('DOMContentLoaded', function() {
 
 // Export functions
 function exportPDF() {
-    // Show loading state
     const btn = event.target;
     const originalText = btn.innerHTML;
     btn.innerHTML = '<span class="spinner-border spinner-border-sm me-2"></span>Génération...';
     btn.disabled = true;
 
-    // Simulate PDF generation delay
     setTimeout(() => {
         alert('Fonctionnalité d\'export PDF en développement. Utilisez l\'impression du navigateur pour le moment.');
         btn.innerHTML = originalText;
@@ -791,7 +666,6 @@ function exportPDF() {
 }
 
 function refreshData() {
-    // Show loading state
     const btn = event.target;
     const originalText = btn.innerHTML;
     btn.innerHTML = '<span class="spinner-border spinner-border-sm me-2"></span>Actualisation...';
@@ -805,15 +679,17 @@ function refreshData() {
 // Auto-refresh every 5 minutes
 setInterval(function() {
     console.log('Auto-refresh des données...');
-    // You can implement a partial refresh here using AJAX
 }, 300000);
 
-// Add smooth scroll to detail cards
-document.querySelectorAll('a[href="#"]').forEach(link => {
-    link.addEventListener('click', function(e) {
-        e.preventDefault();
-        // Future implementation for detailed views
-    });
+// Resize event handler to prevent chart sizing issues
+window.addEventListener('resize', function() {
+    // Debounce resize events
+    clearTimeout(window.resizeTimeout);
+    window.resizeTimeout = setTimeout(function() {
+        Chart.helpers.each(Chart.instances, function(instance) {
+            instance.resize();
+        });
+    }, 100);
 });
 </script>
 @endsection

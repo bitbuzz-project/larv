@@ -41,8 +41,8 @@ class ReportController extends Controller
         // Note Statistics
         $noteStats = $this->getNoteStatistics($currentYear);
 
-        // Administrative Data Statistics
-        $administrativeStats = $this->getAdministrativeStatistics($currentYear);
+        // Student Distribution by cod_dip (Diploma Code)
+        $studentStats = $this->getStudentStatistics();
 
         // Reclamation Analytics
         $reclamationStats = $this->getReclamationAnalytics();
@@ -61,7 +61,7 @@ class ReportController extends Controller
             'studentsByYear',
             'moduleStats',
             'noteStats',
-            'administrativeStats',
+            'studentStats',
             'reclamationStats',
             'performanceMetrics',
             'recentActivity',
@@ -80,6 +80,32 @@ class ReportController extends Controller
             ->orderBy('annee_scolaire', 'desc')
             ->limit(5)
             ->get();
+    }
+
+    /**
+     * Get student statistics by diploma code (cod_dip)
+     */
+    private function getStudentStatistics()
+    {
+        $byDiploma = Student::select('cod_dip', DB::raw('count(*) as count'))
+            ->whereNotNull('cod_dip')
+            ->where('cod_dip', '!=', '')
+            ->groupBy('cod_dip')
+            ->orderBy('count', 'desc')
+            ->get();
+
+        $withoutDiploma = Student::whereNull('cod_dip')
+            ->orWhere('cod_dip', '')
+            ->count();
+
+        $totalStudents = Student::count();
+
+        return [
+            'by_diploma' => $byDiploma,
+            'without_diploma' => $withoutDiploma,
+            'total_students' => $totalStudents,
+            'with_diploma' => $totalStudents - $withoutDiploma,
+        ];
     }
 
     /**
@@ -146,22 +172,6 @@ class ReportController extends Controller
 
         $passed = $query->where('note', '>=', 10)->count();
         return round(($passed / $total) * 100, 2);
-    }
-
-    /**
-     * Get administrative statistics
-     */
-    private function getAdministrativeStatistics($currentYear)
-    {
-        return [
-            'by_filiere' => Administrative::select('filliere', DB::raw('count(*) as count'))
-                ->where('annee_scolaire', $currentYear)
-                ->groupBy('filliere')
-                ->orderBy('count', 'desc')
-                ->get(),
-            'total_current_year' => Administrative::where('annee_scolaire', $currentYear)->count(),
-            'total_all_years' => Administrative::count(),
-        ];
     }
 
     /**
