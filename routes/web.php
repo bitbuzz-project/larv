@@ -36,6 +36,39 @@ Route::middleware('auth')->group(function () {
     Route::post('/logout', [StudentAuthController::class, 'logout'])->name('logout');
 });
 
+// Vérification que les routes d'import de notes sont bien définies
+Route::middleware(['auth', 'admin'])->prefix('admin')->name('admin.')->group(function () {
+
+    // Route principale pour afficher le formulaire d'import
+    Route::get('/notes-import', [NoteController::class, 'showImport'])->name('notes.import');
+
+    // Route pour l'import ODS (POST)
+    Route::post('/notes-import', [NoteController::class, 'import'])->name('notes.import');
+
+    // Route pour l'import CSV (POST)
+    Route::post('/notes-import-csv', [NoteController::class, 'importCsv'])->name('notes.import.csv');
+
+    // Route pour afficher les résultats
+    Route::get('/notes-import-results', [NoteController::class, 'importResults'])->name('notes.import.results');
+
+    // Route de test pour diagnostiquer les problèmes
+    Route::post('/notes-import-test', function(Request $request) {
+        return response()->json([
+            'success' => true,
+            'message' => 'Route de test fonctionnelle',
+            'request_data' => [
+                'method' => $request->method(),
+                'content_type' => $request->header('Content-Type'),
+                'accept' => $request->header('Accept'),
+                'csrf_token' => $request->header('X-CSRF-TOKEN') ? 'présent' : 'manquant',
+                'files' => $request->hasFile('file') ? 'fichier présent' : 'aucun fichier',
+                'import_type' => $request->input('import_type'),
+                'annee_scolaire' => $request->input('annee_scolaire')
+            ]
+        ]);
+    })->name('notes.import.test');
+});
+
 // Admin Routes
 Route::middleware(['auth', 'admin'])->prefix('admin')->name('admin.')->group(function () {
     Route::get('/dashboard', [AdminController::class, 'dashboard'])->name('dashboard');

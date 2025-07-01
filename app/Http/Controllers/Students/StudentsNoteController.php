@@ -7,6 +7,7 @@ use App\Models\ModuleArabic;
 use Illuminate\Http\Request;
 use Illuminate\Support\Facades\Auth;
 use Illuminate\Support\Facades\DB;
+use App\Models\Module;
 
 class StudentsNoteController extends Controller
 {
@@ -66,9 +67,9 @@ class StudentsNoteController extends Controller
         $allNotes = $currentNotes->concat($oldNotes);
         $moduleCodes = $allNotes->pluck('code_module')->unique();
 
-        // Get Arabic module names
-        $arabicModules = ModuleArabic::whereIn('code_module', $moduleCodes)
-            ->pluck('nom_module_ar', 'code_module');
+        // Get Arabic module names from modules table
+        $arabicModules = Module::whereIn('cod_elp', $moduleCodes)
+            ->pluck('lib_elp_arb_fixed', 'cod_elp');
 
         // Add Arabic names to notes
         $currentNotes = $currentNotes->map(function ($note) use ($arabicModules) {

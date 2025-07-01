@@ -23,7 +23,8 @@ return new class extends Migration
                 $table->boolean('is_current_session')->default(true);
                 $table->timestamps();
 
-                $table->index(['apoL_a01_code', 'code_module', 'session_type', 'result_type']);
+                $table->index(['apoL_a01_code', 'code_module', 'session_type', 'result_type'], 'notes_actu_composite_index');
+
             });
     }
 

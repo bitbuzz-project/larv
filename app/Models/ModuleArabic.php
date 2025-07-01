@@ -3,6 +3,7 @@
 namespace App\Models;
 
 use Illuminate\Database\Eloquent\Model;
+use App\Models\Module;
 
 class ModuleArabic extends Model
 {
@@ -14,17 +15,17 @@ class ModuleArabic extends Model
         'nom_module_fr',
     ];
 
-    // Get Arabic name by module code
+    // Get Arabic name by module code from modules table
     public static function getArabicName($codeModule)
     {
-        $module = self::where('code_module', $codeModule)->first();
-        return $module ? $module->nom_module_ar : null;
+        $module = Module::where('cod_elp', $codeModule)->first();
+        return $module ? $module->lib_elp_arb_fixed : null;
     }
 
-    // Get French name by module code
+    // Get French name by module code from modules table
     public static function getFrenchName($codeModule)
     {
-        $module = self::where('code_module', $codeModule)->first();
-        return $module ? $module->nom_module_fr : null;
+        $module = Module::where('cod_elp', $codeModule)->first();
+        return $module ? $module->lib_elp : null;
     }
 }

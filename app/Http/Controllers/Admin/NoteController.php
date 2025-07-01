@@ -10,6 +10,7 @@ use Illuminate\Support\Facades\DB;
 use Illuminate\Support\Facades\Log;
 use PhpOffice\PhpSpreadsheet\IOFactory;
 use PhpOffice\PhpSpreadsheet\Reader\Ods;
+use Illuminate\Validation\ValidationException;
 
 class NoteController extends Controller
 {
@@ -24,7 +25,7 @@ class NoteController extends Controller
     /**
      * Optimized CSV import method
      */
-    public function importCsv(Request $request)
+     public function importCsv(Request $request)
     {
         // More conservative memory settings for CSV
         ini_set('memory_limit', '512M');
@@ -89,22 +90,72 @@ class NoteController extends Controller
                     }, $headers);
                 }
 
-                // Map headers
-                $expectedHeaders = ['apol_a01_code', 'code_module', 'nom_module', 'note'];
+                // Clean headers (remove quotes and trim)
+                $headers = array_map(function($header) {
+                    return trim(str_replace(['"', "'"], '', $header));
+                }, $headers);
+
+                Log::info('CSV Headers detected:', $headers);
+
+                // FLEXIBLE HEADER MAPPING
+                $expectedHeaders = [
+                    'apoL_a01_code' => [
+                        'apol_a01_code', 'apoL_a01_code', 'cod_etu', 'COD_ETU',
+                        'code_etudiant', 'apogee', 'student_code'
+                    ],
+                    'code_module' => [
+                        'code_module', 'cod_module', 'module_code', 'cod_elp',
+                        'COD_ELP', 'elp_code'
+                    ],
+                    'nom_module' => [
+                        'nom_module', 'lib_module', 'module_name', 'libelle_module',
+                        'lib_elp', 'LIB_ELP', 'module_title'
+                    ],
+                    'note' => [
+                        'note', 'grade', 'resultat', 'not_elp', 'NOT_ELP',
+                        'score', 'mark'
+                    ]
+                ];
+
                 $headerMap = [];
 
-                foreach ($headers as $index => $header) {
-                    $cleanHeader = strtolower(trim($header));
-                    if (in_array($cleanHeader, $expectedHeaders)) {
-                        $headerMap[$cleanHeader] = $index;
+                // Map each expected header to its position in the CSV
+                foreach ($expectedHeaders as $expectedKey => $variants) {
+                    $found = false;
+                    foreach ($headers as $index => $header) {
+                        $cleanHeader = strtolower(trim($header));
+                        foreach ($variants as $variant) {
+                            if (strtolower($variant) === $cleanHeader) {
+                                $headerMap[$expectedKey] = $index;
+                                $found = true;
+                                break 2; // Break both loops
+                            }
+                        }
+                    }
+                    if (!$found) {
+                        // Log available headers for debugging
+                        Log::warning("Header '$expectedKey' not found. Available headers: " . implode(', ', $headers));
                     }
                 }
 
+                Log::info('Header mapping result:', $headerMap);
+
                 // Validate required headers
-                foreach ($expectedHeaders as $requiredHeader) {
+                $requiredHeaders = ['apoL_a01_code', 'code_module', 'note'];
+                $missingHeaders = [];
+
+                foreach ($requiredHeaders as $requiredHeader) {
                     if (!isset($headerMap[$requiredHeader])) {
-                        throw new \Exception("Colonne manquante: {$requiredHeader}");
+                        $missingHeaders[] = $requiredHeader;
                     }
+                }
+
+                if (!empty($missingHeaders)) {
+                    $availableHeaders = implode(', ', $headers);
+                    $errorMessage = "Colonnes manquantes: " . implode(', ', $missingHeaders) . ". ";
+                    $errorMessage .= "Colonnes disponibles: " . $availableHeaders . ". ";
+                    $errorMessage .= "Assurez-vous que votre CSV contient les colonnes requises.";
+                    throw new \Exception($errorMessage);
                 }
 
                 $lineNumber = 2;
@@ -120,6 +171,11 @@ class NoteController extends Controller
                             }, $row);
                         }
 
+                        // Clean row data (remove quotes)
+                        $row = array_map(function($cell) {
+                            return trim(str_replace(['"', "'"], '', $cell));
+                        }, $row);
+
                         // Skip empty rows
                         if (empty(array_filter($row))) {
                             $lineNumber++;
@@ -127,11 +183,16 @@ class NoteController extends Controller
                         }
 
                         $noteData = [
-                            'apoL_a01_code' => isset($headerMap['apol_a01_code']) ? trim($row[$headerMap['apol_a01_code']]) : '',
+                            'apoL_a01_code' => isset($headerMap['apoL_a01_code']) ? trim($row[$headerMap['apoL_a01_code']]) : '',
                             'code_module' => isset($headerMap['code_module']) ? trim($row[$headerMap['code_module']]) : '',
-                            'nom_module' => isset($headerMap['nom_module']) ? trim($row[$headerMap['nom_module']]) : '',
+                            'nom_module' => isset($headerMap['nom_module']) ? trim($row[$headerMap['nom_module']]) : 'Module', // Default value
                             'note' => isset($headerMap['note']) ? $row[$headerMap['note']] : null,
                         ];
+
+                        // If nom_module is not available, use code_module as fallback
+                        if (empty($noteData['nom_module']) && !empty($noteData['code_module'])) {
+                            $noteData['nom_module'] = $noteData['code_module'];
+                        }
 
                         // Validation
                         if (empty($noteData['apoL_a01_code'])) {
@@ -156,11 +217,12 @@ class NoteController extends Controller
                             continue;
                         }
 
+                        // Check if student exists
                         if (!isset($existingStudentCodes[$noteData['apoL_a01_code']])) {
                             $errors[] = [
                                 'line' => $lineNumber,
                                 'code' => $noteData['apoL_a01_code'],
-                                'message' => 'Étudiant non trouvé',
+                                'message' => 'Étudiant non trouvé dans la base de données',
                                 'type' => 'foreign_key'
                             ];
                             $skipped++;
@@ -168,12 +230,34 @@ class NoteController extends Controller
                             continue;
                         }
 
+                        // Validate note (should be numeric or empty)
+                        $note = null;
+                        if (!empty($noteData['note'])) {
+                            if (is_numeric($noteData['note'])) {
+                                $note = (float)$noteData['note'];
+                                // Validate note range (0-20)
+                                if ($note < 0 || $note > 20) {
+                                    $errors[] = [
+                                        'line' => $lineNumber,
+                                        'code' => $noteData['apoL_a01_code'],
+                                        'message' => "Note invalide: {$note} (doit être entre 0 et 20)",
+                                        'type' => 'validation'
+                                    ];
+                                    $lineNumber++;
+                                    continue;
+                                }
+                            } else {
+                                // Note is not numeric, skip or set as null
+                                $note = null;
+                            }
+                        }
+
                         // Prepare data for batch insert
                         $insertData = [
                             'apoL_a01_code' => $noteData['apoL_a01_code'],
                             'code_module' => $noteData['code_module'],
                             'nom_module' => $noteData['nom_module'],
-                            'note' => is_numeric($noteData['note']) ? (float)$noteData['note'] : null,
+                            'note' => $note,
                             'annee_scolaire' => $anneeScolaire,
                             'is_current_session' => $importType === 'current_session',
                             'created_at' => now(),
@@ -258,6 +342,12 @@ class NoteController extends Controller
                 return response()->json(['message' => 'Aucune note importée. Vérifiez les erreurs.', 'errors' => $errors], 400);
             }
 
+        } catch (ValidationException $e) {
+            return response()->json([
+                'message' => 'Erreurs de validation.',
+                'errors' => $e->errors()
+            ], 422);
+
         } catch (\Exception $e) {
             Log::error('CSV import error: ' . $e->getMessage());
             return response()->json(['message' => 'Erreur: ' . $e->getMessage()], 500);
@@ -332,7 +422,7 @@ class NoteController extends Controller
 
         try {
             $request->validate([
-                'ods_file' => [
+                'file' => [  // Changed from 'ods_file' to 'file'
                     'required',
                     'file',
                     'max:102400', // Increase to 100MB max
@@ -355,7 +445,7 @@ class NoteController extends Controller
                 'chunk_size' => 'nullable|integer|min:50|max:1000'
             ]);
 
-            $file = $request->file('file'); // Changed from 'ods_file' to 'file'
+            $file = $request->file('file');
             $importType = $request->input('import_type');
             $sessionType = $request->input('session_type');
             $resultType = $request->input('result_type');
@@ -380,14 +470,14 @@ class NoteController extends Controller
             } catch (\Exception $e) {
                 return response()->json([
                     'message' => 'Erreur lors de la lecture du fichier ODS: ' . $e->getMessage(),
-                    'errors' => ['ods_file' => ['Le fichier ODS ne peut pas être lu.']]
+                    'errors' => ['file' => ['Le fichier ODS ne peut pas être lu.']]
                 ], 400);
             }
 
             if ($highestRow <= 1) {
                 return response()->json([
                     'message' => 'Le fichier ODS est vide ou ne contient que les en-têtes.',
-                    'errors' => ['ods_file' => ['Le fichier ne contient aucune donnée.']]
+                    'errors' => ['file' => ['Le fichier ne contient aucune donnée.']]
                 ], 400);
             }
 
@@ -504,7 +594,7 @@ class NoteController extends Controller
                                 'apoL_a01_code' => $noteData['apoL_a01_code'],
                                 'code_module' => $noteData['code_module'],
                                 'nom_module' => $noteData['nom_module'],
-                                'note' => is_numeric($noteData['note']) ? (float)$noteData['note'] : null,
+                                'note' => $this->parseNoteValue($noteData['note']),
                                 'annee_scolaire' => $anneeScolaire,
                                 'is_current_session' => $importType === 'current_session',
                                 'created_at' => now(),
@@ -617,12 +707,46 @@ class NoteController extends Controller
                 return response()->json(['message' => $errorMessage, 'errors' => $errors], 400);
             }
 
+        } catch (ValidationException $e) {
+            // Handle validation errors properly for AJAX requests
+            return response()->json([
+                'message' => 'Erreurs de validation.',
+                'errors' => $e->errors()
+            ], 422);
+
         } catch (\Exception $e) {
             Log::error('Note import error: ' . $e->getMessage() . ' in ' . $e->getFile() . ' on line ' . $e->getLine());
             return response()->json(['message' => 'Erreur serveur lors de l\'importation: ' . $e->getMessage()], 500);
         }
     }
 
+    private function parseNoteValue($note)
+{
+    // Handle null or empty values
+    if (empty($note) || is_null($note)) {
+        return null;
+    }
+
+    // Convert to string and trim whitespace
+    $note = trim(strtoupper((string)$note));
+
+    // Handle ABS (absent) values
+    if (in_array($note, ['ABS', 'ABSENT', 'ABSENTE', 'A'])) {
+        return -1; // Use -1 to represent ABS
+    }
+
+    // Handle numeric values
+    if (is_numeric($note)) {
+        $numericNote = (float)$note;
+        // Validate note range (typically 0-20)
+        if ($numericNote >= 0 && $numericNote <= 20) {
+            return $numericNote;
+        }
+    }
+
+    // For any other non-numeric value, return null
+    return null;
+}
     /**
      * Show import results
      */
