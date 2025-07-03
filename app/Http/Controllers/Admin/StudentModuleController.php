@@ -84,32 +84,73 @@ class StudentModuleController extends Controller
                     }, $headers);
                 }
 
-                // Map headers with flexible matching
+                // Clean headers (remove quotes and trim)
+                $headers = array_map(function($header) {
+                    return trim(str_replace(['"', "'"], '', $header));
+                }, $headers);
+
+                Log::info('CSV Headers detected:', $headers);
+
+                // UPDATED HEADER MAPPING - Added more flexible mapping for your CSV structure
                 $expectedHeaders = [
-                    'apoL_a01_code' => ['apol_a01_code', 'apoL_a01_code', 'cod_etu', 'code_etudiant', 'apogee'],
-                    'code_module' => ['code_module', 'cod_module', 'module_code'],
-                    'module' => ['module', 'nom_module', 'lib_module', 'module_name', 'libelle_module']
+                    'apoL_a01_code' => [
+                        'apol_a01_code', 'apoL_a01_code', 'cod_etu', 'COD_ETU',
+                        'code_etudiant', 'apogee', 'student_code', 'APOGEE' // Added APOGEE
+                    ],
+                    'code_module' => [
+                        'code_module', 'cod_module', 'module_code', 'cod_elp',
+                        'COD_ELP', 'elp_code' // Your CSV has COD_ELP
+                    ],
+                    'module' => [
+                        'module', 'nom_module', 'lib_module', 'module_name', 'libelle_module',
+                        'lib_elp', 'LIB_ELP', 'module_title', 'MODULE' // Added MODULE
+                    ]
                 ];
 
                 $headerMap = [];
-                foreach ($headers as $index => $header) {
-                    $cleanHeader = strtolower(trim($header));
 
-                    // Check each expected header and its variants
-                    foreach ($expectedHeaders as $expectedKey => $variants) {
-                        if (in_array($cleanHeader, $variants)) {
-                            $headerMap[$expectedKey] = $index;
-                            break;
+                // Map each expected header to its position in the CSV
+                foreach ($expectedHeaders as $expectedKey => $variants) {
+                    $found = false;
+                    foreach ($headers as $index => $header) {
+                        $cleanHeader = strtolower(trim($header));
+                        foreach ($variants as $variant) {
+                            if (strtolower($variant) === $cleanHeader) {
+                                $headerMap[$expectedKey] = $index;
+                                $found = true;
+                                break 2; // Break both loops
+                            }
                         }
+                    }
+                    if (!$found) {
+                        // Log available headers for debugging
+                        Log::warning("Header '$expectedKey' not found. Available headers: " . implode(', ', $headers));
                     }
                 }
 
+                Log::info('Header mapping result:', $headerMap);
+
                 // Validate required headers
                 $requiredHeaders = ['apoL_a01_code', 'code_module', 'module'];
+                $missingHeaders = [];
+
                 foreach ($requiredHeaders as $requiredHeader) {
                     if (!isset($headerMap[$requiredHeader])) {
-                        throw new \Exception("Colonne manquante: {$requiredHeader}");
+                        $missingHeaders[] = $requiredHeader;
                     }
+                }
+
+                if (!empty($missingHeaders)) {
+                    $availableHeaders = implode(', ', $headers);
+                    $errorMessage = "Colonnes manquantes: " . implode(', ', $missingHeaders) . ". ";
+                    $errorMessage .= "Colonnes disponibles: " . $availableHeaders . ". ";
+                    $errorMessage .= "Assurez-vous que votre CSV contient les colonnes requises.";
+
+                    // Add specific mapping suggestions for the user's CSV
+                    $errorMessage .= " SUGGESTION: Votre CSV semble avoir APOGEE, COD_ELP, et MODULE. ";
+                    $errorMessage .= "Ces colonnes devraient être automatiquement reconnues.";
+
+                    throw new \Exception($errorMessage);
                 }
 
                 $lineNumber = 2;
@@ -125,6 +166,11 @@ class StudentModuleController extends Controller
                             }, $row);
                         }
 
+                        // Clean row data (remove quotes)
+                        $row = array_map(function($cell) {
+                            return trim(str_replace(['"', "'"], '', $cell));
+                        }, $row);
+
                         // Skip empty rows
                         if (empty(array_filter($row))) {
                             $lineNumber++;
@@ -136,6 +182,11 @@ class StudentModuleController extends Controller
                             'code_module' => isset($headerMap['code_module']) ? trim($row[$headerMap['code_module']]) : '',
                             'module' => isset($headerMap['module']) ? trim($row[$headerMap['module']]) : '',
                         ];
+
+                        // If module name is empty, use code_module as fallback
+                        if (empty($moduleData['module']) && !empty($moduleData['code_module'])) {
+                            $moduleData['module'] = $moduleData['code_module'];
+                        }
 
                         // Validation
                         if (empty($moduleData['apoL_a01_code'])) {

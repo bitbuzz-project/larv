@@ -101,12 +101,16 @@
                                                 ($module->status == 'completed' ? 'bg-info' :
                                                 ($module->status == 'failed' ? 'bg-danger' : 'bg-warning'))
                                             }}">
-                                                {{ $module->status_label }}
+                                                {{
+                                                    $module->status == 'active' ? 'نشط' :
+                                                    ($module->status == 'completed' ? 'مكتمل' :
+                                                    ($module->status == 'failed' ? 'راسب' : 'منسحب'))
+                                                }}
                                             </span>
                                         </div>
 
-                                        @if($module->module_name_ar)
-                                        <p class="text-muted small mb-2">{{ $module->module_name_ar }}</p>
+                                        @if($module->module_arabic_name)
+                                        <p class="text-muted small mb-2">{{ $module->module_arabic_name }}</p>
                                         @endif
 
                                         <p class="text-muted small mb-2">
@@ -157,6 +161,12 @@
                                             </small>
                                         </div>
                                         @endif
+
+                                        <div class="mt-2">
+                                            <small class="text-muted">
+                                                📚 <strong>الفصل الدراسي:</strong> {{ $module->display_semester }}
+                                            </small>
+                                        </div>
                                     </div>
                                 </div>
                             </div>

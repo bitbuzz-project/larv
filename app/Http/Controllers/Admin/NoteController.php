@@ -28,8 +28,8 @@ class NoteController extends Controller
      public function importCsv(Request $request)
     {
         // More conservative memory settings for CSV
-        ini_set('memory_limit', '512M');
-        set_time_limit(600);
+        ini_set('memory_limit', '2048M');
+        set_time_limit(1800);
 
         try {
             $request->validate([
@@ -114,7 +114,10 @@ class NoteController extends Controller
                     'note' => [
                         'note', 'grade', 'resultat', 'not_elp', 'NOT_ELP',
                         'score', 'mark'
-                    ]
+                    ],
+                       // Add these two lines for the new columns
+                    'COD_SES' => ['cod_ses', 'COD_SES', 'session_code'],
+                    'COD_TRE' => ['cod_tre', 'COD_TRE', 'treatment_code']
                 ];
 
                 $headerMap = [];
@@ -187,6 +190,10 @@ class NoteController extends Controller
                             'code_module' => isset($headerMap['code_module']) ? trim($row[$headerMap['code_module']]) : '',
                             'nom_module' => isset($headerMap['nom_module']) ? trim($row[$headerMap['nom_module']]) : 'Module', // Default value
                             'note' => isset($headerMap['note']) ? $row[$headerMap['note']] : null,
+                            // Add these two lines
+                            'COD_SES' => isset($headerMap['COD_SES']) ? trim($row[$headerMap['COD_SES']]) : null,
+                            'COD_TRE' => isset($headerMap['COD_TRE']) ? trim($row[$headerMap['COD_TRE']]) : null,
+
                         ];
 
                         // If nom_module is not available, use code_module as fallback
@@ -260,6 +267,9 @@ class NoteController extends Controller
                             'note' => $note,
                             'annee_scolaire' => $anneeScolaire,
                             'is_current_session' => $importType === 'current_session',
+                                                        // Add these two lines
+                            'COD_SES' => $noteData['COD_SES'],
+                            'COD_TRE' => $noteData['COD_TRE'],
                             'created_at' => now(),
                             'updated_at' => now(),
                         ];
@@ -417,8 +427,8 @@ class NoteController extends Controller
     public function import(Request $request)
     {
         // Increase memory and time limits for large files
-        ini_set('memory_limit', '1024M'); // Increase to 1GB
-        set_time_limit(600); // 10 minutes
+        ini_set('memory_limit', '2048M'); // Increase to 1GB
+        set_time_limit(1800); // 10 minutes
 
         try {
             $request->validate([

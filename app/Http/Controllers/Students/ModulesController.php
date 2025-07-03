@@ -4,8 +4,10 @@ namespace App\Http\Controllers\Students;
 
 use App\Http\Controllers\Controller;
 use App\Models\PedaModule;
+use App\Models\Module;
 use Illuminate\Http\Request;
 use Illuminate\Support\Facades\Auth;
+use Illuminate\Support\Facades\DB;
 
 class ModulesController extends Controller
 {
@@ -29,15 +31,11 @@ class ModulesController extends Controller
             $availableYears = collect(['2024-2025']);
         }
 
-        // Get modules for selected year
-        $modules = PedaModule::forStudent($student->apoL_a01_code)
-                           ->where('annee_scolaire', $selectedYear)
-                           ->orderBy('semester')
-                           ->orderBy('module_name')
-                           ->get();
+        // Get modules for selected year with dynamic semester determination
+        $modules = $this->getModulesWithCorrectSemesters($student->apoL_a01_code, $selectedYear);
 
-        // Group modules by semester
-        $modulesBySemester = $modules->groupBy('semester');
+        // Group modules by semester and sort
+        $modulesBySemester = $modules->groupBy('display_semester')->sortKeys();
 
         // Calculate statistics
         $stats = [
@@ -66,21 +64,17 @@ class ModulesController extends Controller
     {
         $student = Auth::user();
         $currentYear = '2024-2025';
-        $sessionType = $request->get('session', 'automne'); // Default to current session
+        $sessionType = $request->get('session', 'automne');
 
-        // Get current session modules
-        $modules = PedaModule::forStudent($student->apoL_a01_code)
-                           ->currentYear($currentYear)
-                           ->where('status', 'active')
-                           ->when($sessionType, function($query, $sessionType) {
-                               return $query->where('session_type', $sessionType);
-                           })
-                           ->orderBy('semester')
-                           ->orderBy('module_name')
-                           ->get();
+        // Get current session modules with dynamic semester determination
+        $modules = $this->getModulesWithCorrectSemesters(
+            $student->apoL_a01_code,
+            $currentYear,
+            ['status' => 'active', 'session_type' => $sessionType]
+        );
 
-        // Group modules by semester
-        $modulesBySemester = $modules->groupBy('semester');
+        // Group modules by semester and sort
+        $modulesBySemester = $modules->groupBy('display_semester')->sortKeys();
 
         // Get available session types
         $availableSessions = PedaModule::forStudent($student->apoL_a01_code)
@@ -116,8 +110,10 @@ class ModulesController extends Controller
     {
         $student = Auth::user();
 
-        $module = PedaModule::forStudent($student->apoL_a01_code)
-                          ->findOrFail($moduleId);
+        $module = PedaModule::forStudent($student->apoL_a01_code)->findOrFail($moduleId);
+
+        // Add display semester
+        $module->display_semester = $this->determineSemesterFromModuleCode($module->module_code);
 
         return view('student.modules.show', compact('student', 'module'));
     }
@@ -130,20 +126,128 @@ class ModulesController extends Controller
         $student = Auth::user();
         $selectedYear = $request->get('year', '2024-2025');
 
-        $modules = PedaModule::forStudent($student->apoL_a01_code)
-                           ->where('annee_scolaire', $selectedYear)
-                           ->orderBy('semester')
-                           ->orderBy('module_name')
-                           ->get();
+        $modules = $this->getModulesWithCorrectSemesters($student->apoL_a01_code, $selectedYear);
+        $modulesBySemester = $modules->groupBy('display_semester')->sortKeys();
 
-        $modulesBySemester = $modules->groupBy('semester');
-
-        // For now, return a simple view - you can integrate with PDF library later
         return view('student.modules.pdf', compact(
             'student',
             'modules',
             'modulesBySemester',
             'selectedYear'
         ));
+    }
+
+    /**
+     * Get modules with correct semester determination (MAIN LOGIC)
+     */
+    private function getModulesWithCorrectSemesters($apogee, $year, $filters = [])
+    {
+        // Build the query
+        $query = DB::table('peda_modules')
+            ->leftJoin('modules', 'peda_modules.module_code', '=', 'modules.cod_elp')
+            ->where('peda_modules.apogee', $apogee)
+            ->where('peda_modules.annee_scolaire', $year)
+            ->select(
+                'peda_modules.*',
+                'modules.cod_pel',
+                'modules.lib_elp_arb_fixed as module_arabic_name'
+            );
+
+        // Apply additional filters
+        foreach ($filters as $field => $value) {
+            if ($value !== null) {
+                $query->where('peda_modules.' . $field, $value);
+            }
+        }
+
+        $modules = $query->get();
+
+        // Add display_semester to each module
+        return $modules->map(function ($module) {
+            $module->display_semester = $this->determineSemesterFromModuleCode(
+                $module->module_code,
+                $module->cod_pel
+            );
+            return $module;
+        });
+    }
+
+    /**
+     * Determine semester from module code and cod_pel
+     */
+    private function determineSemesterFromModuleCode($moduleCode, $codPel = null)
+    {
+        // If we don't have cod_pel, get it from modules table
+        if (!$codPel) {
+            $moduleRecord = DB::table('modules')
+                ->where('cod_elp', $moduleCode)
+                ->first();
+            $codPel = $moduleRecord ? $moduleRecord->cod_pel : null;
+        }
+
+        if ($codPel) {
+            return $this->extractSemesterFromCodPel($codPel);
+        }
+
+        // Fallback: try to determine from module code itself
+        return $this->extractSemesterFromCode($moduleCode);
+    }
+
+    /**
+     * Extract semester from cod_pel
+     */
+    private function extractSemesterFromCodPel($codPel)
+    {
+        if (!$codPel) return 'S1';
+
+        $codPel = strtoupper(trim($codPel));
+
+        // Pattern 1: Direct semester notation (S1, S2, etc.)
+        if (preg_match('/S([1-6])/', $codPel, $matches)) {
+            return 'S' . $matches[1];
+        }
+
+        // Pattern 2: Look for standalone numbers 1-6
+        if (preg_match('/\b([1-6])\b/', $codPel, $matches)) {
+            return 'S' . $matches[1];
+        }
+
+        // Pattern 3: Semester in words (SEM1, SEMESTER1, etc.)
+        if (preg_match('/SEM(?:ESTER)?[^\d]*([1-6])/i', $codPel, $matches)) {
+            return 'S' . $matches[1];
+        }
+
+        // Pattern 4: Numbers at the end
+        if (preg_match('/([1-6])$/', $codPel, $matches)) {
+            return 'S' . $matches[1];
+        }
+
+        // Pattern 5: Extract first number found
+        if (preg_match('/([1-6])/', $codPel, $matches)) {
+            return 'S' . $matches[1];
+        }
+
+        return 'S1'; // Default fallback
+    }
+
+    /**
+     * Extract semester from module code as fallback
+     */
+    private function extractSemesterFromCode($moduleCode)
+    {
+        if (!$moduleCode) return 'S1';
+
+        $moduleCode = strtoupper(trim($moduleCode));
+
+        // Look for patterns in module code
+        if (preg_match('/S([1-6])/', $moduleCode, $matches)) {
+            return 'S' . $matches[1];
+        }
+
+        if (preg_match('/([1-6])/', $moduleCode, $matches)) {
+            return 'S' . $matches[1];
+        }
+
+        return 'S1'; // Default fallback
     }
 }
